@@ -1,0 +1,61 @@
+name: colourswift_av
+description: AvarionX Security - antivirus suite
+publish_to: "none"
+version: 3.0.7+11535
+environment:
+  sdk: ">=3.0.0 <4.0.0"
+
+dependencies:
+  flutter:
+    sdk: flutter
+  flutter_localizations:
+    sdk: flutter
+  ffi: ^2.1.4
+  permission_handler: ^11.4.0
+  path_provider: ^2.1.4
+  path: ^1.9.0
+  shared_preferences: ^2.3.2
+  percent_indicator: ^4.2.3
+  animate_do: ^3.3.4
+  cupertino_icons: ^1.0.8
+  http: ^1.2.2
+  intl: ^0.20.2
+  provider: ^6.1.2
+  hive: ^2.2.3
+  hive_flutter: ^1.1.0
+  cryptography: ^2.7.0
+  flutter_secure_storage: ^9.2.2
+  url_launcher: ^6.3.2
+  device_info_plus: ^12.2.0
+  android_intent_plus: ^4.0.3
+  in_app_purchase: ^3.2.0
+  crypto: ^3.0.3
+  workmanager: ^0.9.0+3
+  battery_plus: ^6.0.2
+  webview_flutter: ^4.7.0
+  flutter_map: ^8.2.2
+  latlong2: ^0.9.1
+  app_links: ^6.3.2
+  country_flags: ^2.0.0
+  flutter_svg: ^2.0.10
+  device_apps: ^2.2.0
+
+dev_dependencies:
+  flutter_launcher_icons: ^0.14.1
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^4.0.0
+
+flutter:
+  uses-material-design: true
+  generate: true
+
+  assets:
+    - assets/icons/
+
+flutter_launcher_icons:
+  android: true
+  ios: false
+  image_path: "assets/icons/logo.png"
+  remove_alpha_ios: true
+
