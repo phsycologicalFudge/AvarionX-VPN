@@ -1,9 +1,9 @@
 import 'dart:async';
 import 'package:app_links/app_links.dart';
 import 'package:colourswift_av/vpn/services/full_vpn_backend.dart';
+import 'package:colourswift_av/vpn/services/threeD/full_vpn_globe_card.dart';
 import 'package:colourswift_av/vpn/settings/full_vpn_settings_tab.dart';
 import 'package:colourswift_av/vpn/settings/full_vpn_upgrade_screen.dart';
-import 'package:country_flags/country_flags.dart';
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:url_launcher/url_launcher.dart';
@@ -13,9 +13,12 @@ import '../services/purchase_service.dart';
 import 'dns/NetworkProtectionScreen.dart';
 import 'full_vpn_footer_nav.dart';
 import 'services/full_vpn_location_map.dart';
+import 'services/full_vpn_server_locations.dart';
 import 'services/full_vpn_notification_worker.dart';
 import 'vpn_permission_intro_screen.dart';
 import 'package:flutter/services.dart';
+import 'package:colourswift_av/vpn/widgets/full_vpn_server_picker_sheet.dart';
+import 'package:colourswift_av/vpn/widgets/full_vpn_server_selector_chip.dart';
 
 class FullVpnModeScreen extends StatefulWidget {
   const FullVpnModeScreen({super.key});
@@ -32,6 +35,7 @@ class _FullVpnModeScreenState extends State<FullVpnModeScreen>
   StreamSubscription<Uri>? _linkSub;
   bool _closing = false;
   String _tab = "connection";
+  String _mapView = "flat";
 
   final FullVpnNotificationWorker _notifWorker = FullVpnNotificationWorker();
 
@@ -49,12 +53,12 @@ class _FullVpnModeScreenState extends State<FullVpnModeScreen>
     _glowCtrl = AnimationController(
       vsync: this,
       duration: const Duration(seconds: 8),
-    )
-      ..repeat();
+    )..repeat();
 
     c.init();
     c.addListener(_onControllerChanged);
     _initDeepLinks();
+    _loadMapView();
   }
 
   @override
@@ -74,6 +78,24 @@ class _FullVpnModeScreenState extends State<FullVpnModeScreen>
     if (state == AppLifecycleState.resumed) {
       c.onResumed();
     }
+  }
+
+  Future<void> _loadMapView() async {
+    final prefs = await SharedPreferences.getInstance();
+    final saved = prefs.getString("vpn_map_view");
+    if (!mounted) return;
+    setState(() {
+      _mapView = saved == "globe" ? "globe" : "flat";
+    });
+  }
+
+  Future<void> _setMapView(String value) async {
+    if (_mapView == value) return;
+    setState(() {
+      _mapView = value;
+    });
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString("vpn_map_view", value);
   }
 
   ThemeData _darkTheme(BuildContext context) {
@@ -107,7 +129,7 @@ class _FullVpnModeScreenState extends State<FullVpnModeScreen>
     return base.copyWith(
       textSelectionTheme: TextSelectionThemeData(
         cursorColor: scheme.primary,
-        selectionColor: scheme.primary.withOpacity(0.25),
+        selectionColor: scheme.primary.withValues(alpha: 0.25),
         selectionHandleColor: scheme.primary,
       ),
       filledButtonTheme: FilledButtonThemeData(
@@ -124,7 +146,7 @@ class _FullVpnModeScreenState extends State<FullVpnModeScreen>
       outlinedButtonTheme: OutlinedButtonThemeData(
         style: OutlinedButton.styleFrom(
           foregroundColor: scheme.onSurface,
-          side: BorderSide(color: scheme.outlineVariant.withOpacity(0.45)),
+          side: BorderSide(color: scheme.outlineVariant.withValues(alpha: 0.45)),
           textStyle: const TextStyle(fontWeight: FontWeight.w800),
           shape: RoundedRectangleBorder(
             borderRadius: BorderRadius.circular(14),
@@ -147,7 +169,7 @@ class _FullVpnModeScreenState extends State<FullVpnModeScreen>
           borderRadius: BorderRadius.circular(22),
         ),
       ),
-      dividerColor: scheme.outlineVariant.withOpacity(0.35),
+      dividerColor: scheme.outlineVariant.withValues(alpha: 0.35),
       elevatedButtonTheme: ElevatedButtonThemeData(
         style: ElevatedButton.styleFrom(
           elevation: 0,
@@ -172,7 +194,7 @@ class _FullVpnModeScreenState extends State<FullVpnModeScreen>
         ),
       ),
       snackBarTheme: SnackBarThemeData(
-        backgroundColor: scheme.surfaceContainerHighest.withOpacity(0.95),
+        backgroundColor: scheme.surfaceContainerHighest.withValues(alpha: 0.95),
         contentTextStyle: TextStyle(
           color: scheme.onSurface,
           fontWeight: FontWeight.w700,
@@ -183,11 +205,65 @@ class _FullVpnModeScreenState extends State<FullVpnModeScreen>
         shape: RoundedRectangleBorder(
           borderRadius: BorderRadius.circular(16),
           side: BorderSide(
-            color: scheme.outlineVariant.withOpacity(0.25),
+            color: scheme.outlineVariant.withValues(alpha: 0.25),
           ),
         ),
       ),
     );
+  }
+
+  bool _isAwgNode(FullVpnServerLocation s) {
+    return s.id.toLowerCase().startsWith("awg-");
+  }
+
+  bool _isHysteriaNode(FullVpnServerLocation s) {
+    return s.id.toLowerCase().startsWith("hy-");
+  }
+
+  List<FullVpnServerLocation> get _privacyServers {
+    return c.servers.where((s) => !_isAwgNode(s) && !_isHysteriaNode(s)).toList();
+  }
+
+  List<FullVpnServerLocation> get _obfuscationServers {
+    return c.servers.where(_isAwgNode).toList();
+  }
+
+  List<FullVpnServerLocation> get _stealthPlusServers {
+    return c.servers.where(_isHysteriaNode).toList();
+  }
+
+  FullVpnServerLocation? get _freeObfuscationServer {
+    for (final s in _obfuscationServers) {
+      if (s.id.toLowerCase() == "awg-us") return s;
+    }
+    if (_obfuscationServers.isEmpty) return null;
+    return _obfuscationServers.first;
+  }
+
+  bool _isServerUnlocked(FullVpnServerLocation server) {
+    if (_hasAnyProEntitlement()) return true;
+
+    final id = server.id.toLowerCase();
+
+    if (_isAwgNode(server)) {
+      final freeId = _freeObfuscationServer?.id.toLowerCase();
+      return freeId != null && id == freeId;
+    }
+
+    return !_isHysteriaNode(server);
+  }
+
+  String _currentModeValue() {
+    if (c.isHysteriaTransport) return "stealth_plus";
+    if (c.isAmneziaTransport) return "obfuscation";
+    return "privacy";
+  }
+
+  String _currentModeLabel() {
+    final mode = _currentModeValue();
+    if (mode == "stealth_plus") return "Stealth+";
+    if (mode == "obfuscation") return "Obfuscation";
+    return "Privacy";
   }
 
   Future<void> _openPrivacyPolicy() async {
@@ -232,78 +308,24 @@ class _FullVpnModeScreenState extends State<FullVpnModeScreen>
   }
 
   Future<void> _showServerSheet(BuildContext context) async {
-    final theme = Theme.of(context);
-    final scheme = theme.colorScheme;
-
     await showModalBottomSheet(
       context: context,
       backgroundColor: Colors.transparent,
       isScrollControlled: true,
       builder: (ctx) {
-        return DraggableScrollableSheet(
-          expand: false,
-          initialChildSize: 0.55,
-          minChildSize: 0.4,
-          maxChildSize: 0.85,
-          builder: (_, controller) {
-            return Container(
-              decoration: BoxDecoration(
-                color: scheme.surfaceContainerHighest,
-                borderRadius: const BorderRadius.vertical(
-                  top: Radius.circular(24),
-                ),
-              ),
-              child: ListView.builder(
-                controller: controller,
-                padding: const EdgeInsets.fromLTRB(16, 16, 16, 24),
-                itemCount: c.servers.length,
-                itemBuilder: (_, index) {
-                  final s = c.servers[index];
-                  final selected = s.id == c.selectedServerId;
-                  final code = s.countryCode.toUpperCase();
-
-                  return AnimatedContainer(
-                    duration: const Duration(milliseconds: 180),
-                    margin: const EdgeInsets.only(bottom: 10),
-                    decoration: BoxDecoration(
-                      color: selected
-                          ? scheme.primary.withOpacity(0.12)
-                          : scheme.surface.withOpacity(0.25),
-                      borderRadius: BorderRadius.circular(18),
-                      border: Border.all(
-                        color: selected
-                            ? scheme.primary
-                            : scheme.outlineVariant.withOpacity(0.25),
-                      ),
-                    ),
-                    child: ListTile(
-                      contentPadding: const EdgeInsets.symmetric(
-                        horizontal: 14,
-                        vertical: 6,
-                      ),
-                      leading: CountryFlag.fromCountryCode(
-                        code,
-                        height: 22,
-                        width: 32,
-                      ),
-                      title: Text(
-                        s.label,
-                        style: theme.textTheme.bodyLarge?.copyWith(
-                          fontWeight: FontWeight.w800,
-                        ),
-                      ),
-                      trailing: selected
-                          ? Icon(Icons.check_rounded, color: scheme.primary)
-                          : null,
-                      onTap: () async {
-                        Navigator.pop(ctx);
-                        await c.switchServer(s);
-                      },
-                    ),
-                  );
-                },
-              ),
-            );
+        return FullVpnServerPickerSheet(
+          privacyServers: _privacyServers,
+          obfuscationServers: _obfuscationServers,
+          stealthPlusServers: _stealthPlusServers,
+          selectedServerId: c.selectedServerId,
+          hasPro: _hasAnyProEntitlement(),
+          initialMode: _currentModeValue(),
+          isServerUnlocked: _isServerUnlocked,
+          onSelect: (server, transport) async {
+            if (!_isServerUnlocked(server)) return;
+            Navigator.pop(ctx);
+            await c.setVpnTransport(transport);
+            await c.switchServer(server);
           },
         );
       },
@@ -330,19 +352,19 @@ class _FullVpnModeScreenState extends State<FullVpnModeScreen>
                 decoration: BoxDecoration(
                   borderRadius: BorderRadius.circular(22),
                   border: Border.all(
-                    color: scheme.outlineVariant.withOpacity(0.25),
+                    color: scheme.outlineVariant.withValues(alpha: 0.25),
                   ),
                   gradient: LinearGradient(
                     begin: Alignment.topLeft,
                     end: Alignment.bottomRight,
                     colors: [
-                      scheme.surfaceContainerHighest.withOpacity(0.95),
-                      scheme.surface.withOpacity(0.90),
+                      scheme.surfaceContainerHighest.withValues(alpha: 0.95),
+                      scheme.surface.withValues(alpha: 0.90),
                     ],
                   ),
                   boxShadow: [
                     BoxShadow(
-                      color: scheme.primary.withOpacity(0.12),
+                      color: scheme.primary.withValues(alpha: 0.12),
                       blurRadius: 80,
                       spreadRadius: -20,
                       offset: const Offset(0, 30),
@@ -406,7 +428,7 @@ class _FullVpnModeScreenState extends State<FullVpnModeScreen>
                               style: OutlinedButton.styleFrom(
                                 foregroundColor: scheme.onSurface,
                                 side: BorderSide(
-                                  color: scheme.outlineVariant.withOpacity(0.4),
+                                  color: scheme.outlineVariant.withValues(alpha: 0.4),
                                 ),
                                 padding: const EdgeInsets.symmetric(vertical: 14),
                                 shape: RoundedRectangleBorder(
@@ -479,59 +501,12 @@ class _FullVpnModeScreenState extends State<FullVpnModeScreen>
   }
 
   Widget _serverSelector(BuildContext context) {
-    final theme = Theme.of(context);
-    final scheme = theme.colorScheme;
-
-    if (c.servers.isEmpty) {
-      return Text(
-        "No servers",
-        style: theme.textTheme.bodyMedium?.copyWith(
-          fontWeight: FontWeight.w800,
-          color: scheme.onSurfaceVariant,
-        ),
-      );
-    }
-
-    final selected = c.servers.firstWhere(
-          (s) => s.id == c.selectedServerId,
-      orElse: () => c.servers.first,
-    );
-
-    final countryCode = selected.countryCode.toUpperCase();
-
-    return InkWell(
-      borderRadius: BorderRadius.circular(999),
+    return FullVpnServerSelectorChip(
+      servers: c.servers,
+      selectedServerId: c.selectedServerId,
+      currentModeLabel: _currentModeLabel(),
+      connected: c.connected,
       onTap: c.busy ? null : () => _showServerSheet(context),
-      child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-        child: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            CountryFlag.fromCountryCode(
-              countryCode,
-              height: 18,
-              width: 26,
-            ),
-            const SizedBox(width: 8),
-            Flexible(
-              child: Text(
-                selected.label,
-                style: theme.textTheme.bodyMedium?.copyWith(
-                  fontWeight: FontWeight.w800,
-                  color: scheme.onSurface,
-                ),
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-              ),
-            ),
-            const SizedBox(width: 6),
-            Icon(
-              Icons.keyboard_arrow_down_rounded,
-              color: scheme.onSurfaceVariant,
-            ),
-          ],
-        ),
-      ),
     );
   }
 
@@ -676,14 +651,78 @@ class _FullVpnModeScreenState extends State<FullVpnModeScreen>
     );
   }
 
+  Widget _mapViewToggle(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+
+    Widget item({
+      required String value,
+      required IconData icon,
+      required String label,
+    }) {
+      final selected = _mapView == value;
+
+      return Material(
+        color: selected
+            ? scheme.primary.withValues(alpha: 0.22)
+            : Colors.black.withValues(alpha: 0.55),
+        borderRadius: BorderRadius.circular(14),
+        child: InkWell(
+          borderRadius: BorderRadius.circular(14),
+          onTap: () => _setMapView(value),
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Icon(
+                  icon,
+                  size: 18,
+                  color: selected
+                      ? scheme.onSurface
+                      : scheme.onSurfaceVariant,
+                ),
+                const SizedBox(height: 2),
+                Text(
+                  label,
+                  style: TextStyle(
+                    fontSize: 10,
+                    fontWeight: selected ? FontWeight.w800 : FontWeight.w700,
+                    color: selected
+                        ? scheme.onSurface
+                        : scheme.onSurfaceVariant,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      );
+    }
+
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        item(
+          value: "flat",
+          icon: Icons.map_rounded,
+          label: "2D",
+        ),
+        const SizedBox(height: 10),
+        item(
+          value: "globe",
+          icon: Icons.public_rounded,
+          label: "3D",
+        ),
+      ],
+    );
+  }
+
   Widget _connectionScreen(BuildContext context) {
     final theme = Theme.of(context);
     final scheme = theme.colorScheme;
     final l10n = AppLocalizations.of(context)!;
 
-    final city = c.uiCity;
     final country = c.uiCountry;
-    final ip4 = _ipv4Only(c.uiIp);
 
     final mapHeader = c.connectingUi
         ? l10n.vpnStatusConnectingEllipsis
@@ -696,58 +735,27 @@ class _FullVpnModeScreenState extends State<FullVpnModeScreen>
     final lat = c.locLat() ?? c.lastLat;
     final lon = c.locLon() ?? c.lastLon;
 
-    final canConnect = !c.connected && !c.busy && !c.softCapReached && !c.connectingUi;
+    final canConnect =
+        !c.connected && !c.busy && !c.softCapReached && !c.connectingUi;
     final canDisconnect = c.connected && !c.busy;
 
     final connectStyle = ElevatedButton.styleFrom(
       backgroundColor: scheme.primary,
       foregroundColor: scheme.onPrimary,
-      disabledBackgroundColor: scheme.surface.withOpacity(0.35),
-      disabledForegroundColor: scheme.onSurfaceVariant.withOpacity(0.8),
+      disabledBackgroundColor: scheme.surface.withValues(alpha: 0.35),
+      disabledForegroundColor: scheme.onSurfaceVariant.withValues(alpha: 0.8),
     );
 
     final disconnectStyle = OutlinedButton.styleFrom(
       foregroundColor: scheme.onSurface,
-      side: BorderSide(color: scheme.outlineVariant.withOpacity(0.45)),
-      disabledForegroundColor: scheme.onSurfaceVariant.withOpacity(0.8),
+      side: BorderSide(color: scheme.outlineVariant.withValues(alpha: 0.45)),
+      disabledForegroundColor: scheme.onSurfaceVariant.withValues(alpha: 0.8),
       padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 14),
       shape: RoundedRectangleBorder(
         borderRadius: BorderRadius.circular(14),
       ),
       textStyle: const TextStyle(fontWeight: FontWeight.w800),
     );
-
-    final titleCountry = c.connectingUi
-        ? l10n.vpnStatusConnectingEllipsis
-        : (c.connected
-        ? (country.isNotEmpty ? country : l10n.vpnStatusConnected)
-        : "Disconnected");
-
-    final subtitle = c.connectingUi
-        ? l10n.vpnSubtitleEstablishingTunnel
-        : (c.connected
-        ? (city.isNotEmpty && country.isNotEmpty
-        ? "$city, $country"
-        : (country.isNotEmpty ? country : l10n.vpnSubtitleFindingLocation))
-        : l10n.vpnStatusNotConnected);
-
-    final ipLine = (c.connected && !c.connectingUi && ip4.isNotEmpty) ? ip4 : "";
-
-    final statusLabel = c.connectingUi
-        ? l10n.networkStatusConnecting
-        : (c.connected ? l10n.vpnStatusProtected : l10n.vpnStatusNotConnected);
-
-    final statusTone = c.connectingUi
-        ? scheme.tertiaryContainer
-        : (c.connected
-        ? const Color(0xFF0B3B24)
-        : scheme.surface.withOpacity(0.30));
-
-    final statusTextTone = c.connectingUi
-        ? scheme.onTertiaryContainer
-        : (c.connected
-        ? const Color(0xFFBFF7D4)
-        : scheme.onSurface.withOpacity(0.92));
 
     final connectLabel =
     c.connectingUi ? l10n.vpnStatusConnectingEllipsis : l10n.vpnConnect;
@@ -756,131 +764,20 @@ class _FullVpnModeScreenState extends State<FullVpnModeScreen>
       mainAxisSize: MainAxisSize.min,
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Row(
-          children: [
-            AnimatedContainer(
-              duration: const Duration(milliseconds: 220),
-              width: 46,
-              height: 46,
-              decoration: BoxDecoration(
-                color: scheme.surface.withOpacity(0.28),
-                shape: BoxShape.circle,
-                border: Border.all(
-                  color: scheme.outlineVariant.withOpacity(0.25),
-                ),
-              ),
-              child: Icon(
-                c.connected ? Icons.verified_user_rounded : Icons.shield_outlined,
-                color: scheme.onSurface.withOpacity(0.92),
-                size: 22,
-              ),
+        if (!c.connected) ...[
+          Text(
+            "You're unprotected",
+            style: theme.textTheme.labelLarge?.copyWith(
+              color: const Color(0xFFFF7A7A),
+              fontWeight: FontWeight.w900,
+              letterSpacing: 0.1,
             ),
-            const SizedBox(width: 12),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    titleCountry,
-                    style: theme.textTheme.titleLarge?.copyWith(
-                      fontWeight: FontWeight.w900,
-                      letterSpacing: -0.3,
-                      height: 1.05,
-                    ),
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                  ),
-                  const SizedBox(height: 5),
-                  Text(
-                    subtitle,
-                    style: theme.textTheme.bodySmall?.copyWith(
-                      color: scheme.onSurfaceVariant,
-                      fontWeight: FontWeight.w700,
-                      height: 1.15,
-                    ),
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                  ),
-                ],
-              ),
-            ),
-            const SizedBox(width: 10),
-            Container(
-              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-              decoration: BoxDecoration(
-                color: scheme.surface.withOpacity(0.26),
-                borderRadius: BorderRadius.circular(999),
-                border: Border.all(
-                  color: scheme.outlineVariant.withOpacity(0.25),
-                ),
-              ),
-              child: _serverSelector(context),
-            ),
-          ],
-        ),
-        const SizedBox(height: 14),
-        Wrap(
-          spacing: 8,
-          runSpacing: 8,
-          children: [
-            Container(
-              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
-              decoration: BoxDecoration(
-                color: statusTone,
-                borderRadius: BorderRadius.circular(999),
-                border: Border.all(
-                  color: scheme.outlineVariant.withOpacity(0.22),
-                ),
-              ),
-              child: Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Container(
-                    width: 8,
-                    height: 8,
-                    decoration: BoxDecoration(
-                      color: statusTextTone.withOpacity(0.95),
-                      shape: BoxShape.circle,
-                    ),
-                  ),
-                  const SizedBox(width: 8),
-                  Text(
-                    statusLabel,
-                    style: theme.textTheme.labelLarge?.copyWith(
-                      color: statusTextTone,
-                      fontWeight: FontWeight.w900,
-                      height: 1.0,
-                    ),
-                  ),
-                ],
-              ),
-            ),
-            if (ipLine.isNotEmpty)
-              Container(
-                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
-                decoration: BoxDecoration(
-                  color: scheme.surface.withOpacity(0.22),
-                  borderRadius: BorderRadius.circular(999),
-                  border: Border.all(
-                    color: scheme.outlineVariant.withOpacity(0.22),
-                  ),
-                ),
-                child: Text(
-                  l10n.vpnIpLabel(ipLine),
-                  style: theme.textTheme.labelLarge?.copyWith(
-                    color: scheme.onSurface.withOpacity(0.92),
-                    fontWeight: FontWeight.w900,
-                    height: 1.0,
-                  ),
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                ),
-              ),
-          ],
-        ),
-        const SizedBox(height: 16),
+          ),
+          const SizedBox(height: 10),
+        ],
+        _serverSelector(context),
+        const SizedBox(height: 10),
         _usageRow(context),
-        const SizedBox(height: 16),
         const SizedBox(height: 16),
         Row(
           children: [
@@ -930,17 +827,74 @@ class _FullVpnModeScreenState extends State<FullVpnModeScreen>
     return Stack(
       children: [
         Positioned.fill(
-          child: FullVpnLocationMapCard(
-            lat: lat,
-            lon: lon,
-            connected: c.connected,
-            isConnecting: c.connectingUi,
-            headerText: mapHeader,
-            servers: c.servers,
-            selectedServerId: c.selectedServerId,
-            onServerTap: (s) {
-              c.selectServerPreview(s);
+          child: AnimatedSwitcher(
+            duration: const Duration(milliseconds: 420),
+            reverseDuration: const Duration(milliseconds: 320),
+            switchInCurve: Curves.easeOutCubic,
+            switchOutCurve: Curves.easeInCubic,
+            layoutBuilder: (currentChild, previousChildren) {
+              return Stack(
+                fit: StackFit.expand,
+                children: [
+                  ...previousChildren,
+                  if (currentChild != null) currentChild,
+                ],
+              );
             },
+            transitionBuilder: (child, animation) {
+              final fade = CurvedAnimation(
+                parent: animation,
+                curve: Curves.easeOutCubic,
+              );
+
+              final scale = Tween<double>(
+                begin: 0.985,
+                end: 1.0,
+              ).animate(fade);
+
+              return FadeTransition(
+                opacity: fade,
+                child: ScaleTransition(
+                  scale: scale,
+                  child: child,
+                ),
+              );
+            },
+            child: _mapView == "globe"
+                ? FullVpnGlobeCard(
+              key: const ValueKey("globe"),
+              lat: lat,
+              lon: lon,
+              connected: c.connected,
+              isConnecting: c.connectingUi,
+              headerText: mapHeader,
+              servers: c.servers,
+              selectedServerId: c.selectedServerId,
+              onServerTap: (s) {
+                c.selectServerPreview(s);
+              },
+            )
+                : FullVpnLocationMapCard(
+              key: const ValueKey("flat"),
+              lat: lat,
+              lon: lon,
+              connected: c.connected,
+              isConnecting: c.connectingUi,
+              headerText: mapHeader,
+              servers: c.servers,
+              selectedServerId: c.selectedServerId,
+              onServerTap: (s) {
+                c.selectServerPreview(s);
+              },
+            ),
+          ),
+        ),
+        Positioned(
+          top: 230,
+          right: 12,
+          child: SafeArea(
+            bottom: false,
+            child: _mapViewToggle(context),
           ),
         ),
         Positioned(
@@ -961,20 +915,20 @@ class _FullVpnModeScreenState extends State<FullVpnModeScreen>
                     decoration: BoxDecoration(
                       borderRadius: BorderRadius.circular(24),
                       border: Border.all(
-                        color: scheme.outlineVariant.withOpacity(0.22),
+                        color: scheme.outlineVariant.withValues(alpha: 0.22),
                       ),
                       gradient: LinearGradient(
                         begin: Alignment(-1 + a, -1),
                         end: Alignment(1 + a, 1),
                         colors: [
-                          scheme.primaryContainer.withOpacity(0.18),
-                          scheme.surfaceContainerHighest.withOpacity(0.86),
-                          scheme.primaryContainer.withOpacity(0.14),
+                          scheme.primaryContainer.withValues(alpha: 0.18),
+                          scheme.surfaceContainerHighest.withValues(alpha: 0.86),
+                          scheme.primaryContainer.withValues(alpha: 0.14),
                         ],
                       ),
                       boxShadow: [
                         BoxShadow(
-                          color: scheme.primary.withOpacity(0.10),
+                          color: scheme.primary.withValues(alpha: 0.10),
                           blurRadius: 90,
                           spreadRadius: -18,
                           offset: const Offset(0, 28),
@@ -984,7 +938,7 @@ class _FullVpnModeScreenState extends State<FullVpnModeScreen>
                     child: Padding(
                       padding: const EdgeInsets.all(16),
                       child: ConstrainedBox(
-                        constraints: const BoxConstraints(maxHeight: 320),
+                        constraints: const BoxConstraints(maxHeight: 360),
                         child: SingleChildScrollView(
                           physics: const BouncingScrollPhysics(),
                           child: cardContent,
@@ -1145,13 +1099,13 @@ class _FullVpnModeScreenState extends State<FullVpnModeScreen>
                 padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
                 decoration: BoxDecoration(
                   color: pro
-                      ? const Color(0xFF1B7F4B).withOpacity(0.16)
-                      : const Color(0xFFB8860B).withOpacity(0.16),
+                      ? const Color(0xFF1B7F4B).withValues(alpha: 0.16)
+                      : const Color(0xFFB8860B).withValues(alpha: 0.16),
                   borderRadius: BorderRadius.circular(999),
                   border: Border.all(
                     color: pro
-                        ? const Color(0xFF1B7F4B).withOpacity(0.28)
-                        : const Color(0xFFB8860B).withOpacity(0.28),
+                        ? const Color(0xFF1B7F4B).withValues(alpha: 0.28)
+                        : const Color(0xFFB8860B).withValues(alpha: 0.28),
                   ),
                 ),
                 child: Text(
@@ -1176,10 +1130,10 @@ class _FullVpnModeScreenState extends State<FullVpnModeScreen>
     }) {
       return Container(
         decoration: BoxDecoration(
-          color: scheme.surface.withOpacity(0.22),
+          color: scheme.surface.withValues(alpha: 0.22),
           borderRadius: BorderRadius.circular(20),
           border: Border.all(
-            color: scheme.outlineVariant.withOpacity(0.16),
+            color: scheme.outlineVariant.withValues(alpha: 0.16),
           ),
         ),
         child: Column(
@@ -1188,7 +1142,7 @@ class _FullVpnModeScreenState extends State<FullVpnModeScreen>
             Divider(
               height: 1,
               thickness: 1,
-              color: scheme.outlineVariant.withOpacity(0.14),
+              color: scheme.outlineVariant.withValues(alpha: 0.14),
             ),
             ...children,
           ],
@@ -1233,7 +1187,7 @@ class _FullVpnModeScreenState extends State<FullVpnModeScreen>
                           Text(
                             body,
                             style: theme.textTheme.bodySmall?.copyWith(
-                              color: scheme.onSurfaceVariant.withOpacity(0.92),
+                              color: scheme.onSurfaceVariant.withValues(alpha: 0.92),
                               fontWeight: FontWeight.w500,
                               height: 1.3,
                             ),
@@ -1267,7 +1221,7 @@ class _FullVpnModeScreenState extends State<FullVpnModeScreen>
                 thickness: 1,
                 indent: 16,
                 endIndent: 16,
-                color: scheme.outlineVariant.withOpacity(0.12),
+                color: scheme.outlineVariant.withValues(alpha: 0.12),
               ),
           ],
         ),
@@ -1414,14 +1368,14 @@ class _FullVpnModeScreenState extends State<FullVpnModeScreen>
                                 ? const Color(0xFFBFF7D4)
                                 : const Color(0xFFFFE7A3),
                             backgroundColor: _hasAnyProEntitlement()
-                                ? const Color(0xFF1B7F4B).withOpacity(0.22)
-                                : const Color(0xFFB8860B).withOpacity(0.22),
+                                ? const Color(0xFF1B7F4B).withValues(alpha: 0.22)
+                                : const Color(0xFFB8860B).withValues(alpha: 0.22),
                             shape: RoundedRectangleBorder(
                               borderRadius: BorderRadius.circular(999),
                               side: BorderSide(
                                 color: _hasAnyProEntitlement()
-                                    ? const Color(0xFF1B7F4B).withOpacity(0.45)
-                                    : const Color(0xFFB8860B).withOpacity(0.45),
+                                    ? const Color(0xFF1B7F4B).withValues(alpha: 0.45)
+                                    : const Color(0xFFB8860B).withValues(alpha: 0.45),
                               ),
                             ),
                           ),
@@ -1447,7 +1401,7 @@ class _FullVpnModeScreenState extends State<FullVpnModeScreen>
                         : Theme.of(context)
                         .colorScheme
                         .surfaceContainerHighest
-                        .withOpacity(0.55),
+                        .withValues(alpha: 0.55),
                   ),
                   child: SafeArea(
                     bottom: false,

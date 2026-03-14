@@ -2,7 +2,7 @@ import 'dart:async';
 import 'dart:math' as math;
 import 'dart:typed_data';
 import 'dart:ui' as ui;
-
+import 'full_vpn_server_locations.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
 import 'package:flutter_map/flutter_map.dart';
@@ -10,20 +10,6 @@ import 'package:flutter_map_tile_caching/flutter_map_tile_caching.dart';
 import 'package:latlong2/latlong.dart';
 
 import 'animated_connecting_route_layer.dart';
-
-class FullVpnServerLocation {
-  final String id;
-  final String label;
-  final String countryCode;
-  final LatLng point;
-
-  const FullVpnServerLocation({
-    required this.id,
-    required this.label,
-    required this.countryCode,
-    required this.point,
-  });
-}
 
 class FullVpnLocationMapCard extends StatefulWidget {
   final double? lat;

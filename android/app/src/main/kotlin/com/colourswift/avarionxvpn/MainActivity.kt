@@ -10,7 +10,9 @@ import androidx.annotation.NonNull
 import androidx.core.content.ContextCompat
 import com.colourswift.avarionxvpn.vpn.CSVpnService
 import com.colourswift.avarionxvpn.vpn.VpnModeSwitcher
+import com.colourswift.avarionxvpn.vpn.amnezia.CSAmneziaWireGuardService
 import com.colourswift.avarionxvpn.vpn.wireguard.CSWireGuardService
+import com.colourswift.avarionxvpn.vpn.hysteria.CSHysteriaService
 import io.flutter.embedding.android.FlutterActivity
 import io.flutter.embedding.engine.FlutterEngine
 import io.flutter.plugin.common.EventChannel
@@ -75,7 +77,25 @@ class MainActivity : FlutterActivity() {
     private var pendingWgExcludedAppsJson: String? = null
     private var pendingVpnPermissionResult: MethodChannel.Result? = null
 
+    private fun installCrashLogger() {
+        val previous = Thread.getDefaultUncaughtExceptionHandler()
+
+        Thread.setDefaultUncaughtExceptionHandler { thread, throwable ->
+            try {
+                android.util.Log.e(
+                    "CS_CRASH",
+                    "uncaught thread=${thread.name} msg=${throwable.message ?: ""}",
+                    throwable
+                )
+            } catch (_: Throwable) {
+            }
+
+            previous?.uncaughtException(thread, throwable)
+        }
+    }
+
     override fun onCreate(savedInstanceState: Bundle?) {
+        installCrashLogger()
         super.onCreate(savedInstanceState)
     }
 
@@ -83,13 +103,18 @@ class MainActivity : FlutterActivity() {
         super.onActivityResult(requestCode, resultCode, data)
 
         if (requestCode == REQ_WG_VPN) {
-            val cfg = pendingWgConfig
-            val ex = pendingWgExcludedAppsJson
+            val wgCfg = pendingWgConfig
+            val wgEx = pendingWgExcludedAppsJson
+
             pendingWgConfig = null
             pendingWgExcludedAppsJson = null
-            if (resultCode == RESULT_OK && !cfg.isNullOrBlank()) {
-                startWgService(cfg, ex)
+
+            if (resultCode == RESULT_OK) {
+                if (!wgCfg.isNullOrBlank()) {
+                    startWgService(wgCfg, wgEx)
+                }
             }
+
             return
         }
 
@@ -139,6 +164,7 @@ class MainActivity : FlutterActivity() {
 
                         VpnModeSwitcher.stopDnsVpn(applicationContext)
                         VpnModeSwitcher.stopWireGuard(applicationContext)
+                        stopAmneziaService()
 
                         android.os.Handler(android.os.Looper.getMainLooper()).postDelayed({
                             startWgService(config, excludedAppsJson)
@@ -148,10 +174,9 @@ class MainActivity : FlutterActivity() {
                     }
 
                     "stopWireGuard" -> {
-                        val intent =
-                            Intent(applicationContext, CSWireGuardService::class.java).apply {
-                                action = CSWireGuardService.ACTION_STOP
-                            }
+                        val intent = Intent(applicationContext, CSWireGuardService::class.java).apply {
+                            action = CSWireGuardService.ACTION_STOP
+                        }
                         applicationContext.startService(intent)
                         result.success(true)
                     }
@@ -160,8 +185,97 @@ class MainActivity : FlutterActivity() {
                         result.success(CSWireGuardService.isRunning)
                     }
 
+                    "startAmneziaWireGuard" -> {
+                        val config = call.argument<String>("config") ?: ""
+                        if (config.isBlank()) {
+                            result.error("AWG_CONFIG_MISSING", "Amnezia config missing", null)
+                            return@setMethodCallHandler
+                        }
+
+                        val excludedAppsJson = argsToExcludedAppsJson(call.argument<List<*>>("excluded_apps"))
+
+                        VpnModeSwitcher.stopDnsVpn(applicationContext)
+                        VpnModeSwitcher.stopWireGuard(applicationContext)
+                        stopAmneziaService()
+
+                        android.os.Handler(android.os.Looper.getMainLooper()).postDelayed({
+                            startAmneziaService(config, excludedAppsJson)
+                        }, 650)
+
+                        result.success(true)
+                    }
+
+                    "stopAmneziaWireGuard" -> {
+                        stopAmneziaService()
+                        result.success(true)
+                    }
+
+                    "isAmneziaWireGuardRunning" -> {
+                        result.success(CSAmneziaWireGuardService.isRunning)
+                    }
+
+                    "startHysteria" -> {
+                        val server = call.argument<String>("server")?.trim().orEmpty()
+                        val auth = call.argument<String>("auth")?.trim().orEmpty()
+                        val sni = call.argument<String>("sni")?.trim().orEmpty()
+                        val dns = call.argument<String>("dns")?.trim().orEmpty()
+
+                        if (server.isBlank() || auth.isBlank() || sni.isBlank() || dns.isBlank()) {
+                            result.error("HY_ARGS_MISSING", "Hysteria server/auth/sni/dns missing", null)
+                            return@setMethodCallHandler
+                        }
+
+                        VpnModeSwitcher.stopDnsVpn(applicationContext)
+                        VpnModeSwitcher.stopWireGuard(applicationContext)
+                        stopAmneziaService()
+
+                        android.os.Handler(android.os.Looper.getMainLooper()).postDelayed({
+                            val intent = Intent(applicationContext, CSHysteriaService::class.java).apply {
+                                action = CSHysteriaService.ACTION_START
+                                putExtra(CSHysteriaService.EXTRA_SERVER, server)
+                                putExtra(CSHysteriaService.EXTRA_AUTH, auth)
+                                putExtra(CSHysteriaService.EXTRA_SNI, sni)
+                                putExtra(CSHysteriaService.EXTRA_DNS, dns)
+                            }
+
+                            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                                applicationContext.startForegroundService(intent)
+                            } else {
+                                applicationContext.startService(intent)
+                            }
+                        }, 650)
+
+                        result.success(true)
+                    }
+
+                    "stopHysteria" -> {
+                        android.util.Log.i("CS_HY_MAIN", "stopHysteria method channel invoked")
+
+                        val intent = Intent(applicationContext, CSHysteriaService::class.java).apply {
+                            action = CSHysteriaService.ACTION_STOP
+                        }
+                        applicationContext.startService(intent)
+                        result.success(true)
+                    }
+
+                    "isHysteriaRunning" -> {
+                        result.success(CSHysteriaService.isReady)
+                    }
+
                     "isDnsVpnRunning" -> {
                         result.success(CSVpnService.isRunning)
+                    }
+
+                    "startXray" -> {
+                        result.error("XRAY_DISABLED", "Xray is disabled in this build", null)
+                    }
+
+                    "stopXray" -> {
+                        result.success(true)
+                    }
+
+                    "isXrayRunning" -> {
+                        result.success(false)
                     }
 
                     else -> result.notImplemented()
@@ -404,6 +518,29 @@ class MainActivity : FlutterActivity() {
     private fun stopWgService() {
         val i = Intent(this, CSWireGuardService::class.java).apply {
             action = CSWireGuardService.ACTION_STOP
+        }
+        startService(i)
+    }
+
+    private fun startAmneziaService(cfg: String, excludedAppsJson: String?) {
+        val i = Intent(this, CSAmneziaWireGuardService::class.java).apply {
+            action = CSAmneziaWireGuardService.ACTION_START
+            putExtra(CSAmneziaWireGuardService.EXTRA_AWG_CONFIG, cfg)
+            if (!excludedAppsJson.isNullOrBlank()) {
+                putExtra(CSAmneziaWireGuardService.EXTRA_EXCLUDED_APPS_JSON, excludedAppsJson)
+            }
+        }
+
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            ContextCompat.startForegroundService(this, i)
+        } else {
+            startService(i)
+        }
+    }
+
+    private fun stopAmneziaService() {
+        val i = Intent(this, CSAmneziaWireGuardService::class.java).apply {
+            action = CSAmneziaWireGuardService.ACTION_STOP
         }
         startService(i)
     }

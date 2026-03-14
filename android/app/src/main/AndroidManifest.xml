@@ -78,6 +78,21 @@
         </service>
 
         <service
+            android:name=".vpn.amnezia.CSAmneziaWireGuardService"
+            android:permission="android.permission.BIND_VPN_SERVICE"
+            android:exported="false"
+            android:enabled="true"
+            android:foregroundServiceType="specialUse">
+            <property
+                android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE"
+                android:value="vpn"
+                tools:targetApi="34" />
+            <intent-filter>
+                <action android:name="android.net.VpnService" />
+            </intent-filter>
+        </service>
+
+        <service
             android:name="com.wireguard.android.backend.GoBackend$VpnService"
             android:permission="android.permission.BIND_VPN_SERVICE"
             android:exported="false"
@@ -88,6 +103,39 @@
                 android:value="vpn"
                 tools:targetApi="34" />
         </service>
+
+        <service
+            android:name="org.amnezia.awg.backend.GoBackend$VpnService"
+            android:permission="android.permission.BIND_VPN_SERVICE"
+            android:exported="false"
+            android:enabled="true"
+            android:foregroundServiceType="specialUse">
+            <property
+                android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE"
+                android:value="vpn"
+                tools:targetApi="34" />
+            <intent-filter>
+                <action android:name="android.net.VpnService" />
+            </intent-filter>
+        </service>
+
+        <service
+            android:name=".vpn.hysteria.CSHysteriaService"
+            android:permission="android.permission.BIND_VPN_SERVICE"
+            android:exported="false"
+            android:foregroundServiceType="specialUse">
+            <intent-filter>
+                <action android:name="android.net.VpnService" />
+            </intent-filter>
+
+            <property
+                android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE"
+                android:value="vpn_tunnel" />
+        </service>
+
+        <receiver
+            android:name=".vpn.VpnNotificationActionReceiver"
+            android:exported="false" />
 
         <meta-data
             android:name="flutterEmbedding"

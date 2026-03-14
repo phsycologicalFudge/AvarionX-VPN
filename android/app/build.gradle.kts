@@ -37,11 +37,33 @@ android {
         targetSdk = 35
         versionCode = flutter.versionCode
         versionName = flutter.versionName
+
+        externalNativeBuild {
+            cmake {
+                cppFlags += ""
+            }
+        }
+
+        ndk {
+            abiFilters += listOf("arm64-v8a", "armeabi-v7a")
+        }
+    }
+
+    externalNativeBuild {
+        cmake {
+            path = file("src/main/cpp/CMakeLists.txt")
+        }
     }
 
     buildFeatures {
         aidl = true
         buildConfig = true
+    }
+
+    packaging {
+        jniLibs {
+            useLegacyPackaging = true
+        }
     }
 
     signingConfigs {
@@ -81,5 +103,7 @@ dependencies {
     implementation(files("libs/provider-release.aar"))
 
     implementation("com.wireguard.android:tunnel:1.0.20260102")
+
+    compileOnly("com.google.code.findbugs:jsr305:3.0.2")
     coreLibraryDesugaring("com.android.tools:desugar_jdk_libs:2.0.3")
 }

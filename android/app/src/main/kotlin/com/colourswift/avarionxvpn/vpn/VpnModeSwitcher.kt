@@ -3,6 +3,8 @@ package com.colourswift.avarionxvpn.vpn
 import android.content.Context
 import android.content.Intent
 import android.os.Build
+import com.colourswift.avarionxvpn.vpn.amnezia.CSAmneziaWireGuardService
+import com.colourswift.avarionxvpn.vpn.hysteria.CSHysteriaService
 import com.colourswift.avarionxvpn.vpn.wireguard.CSWireGuardService
 import java.util.concurrent.Executors
 
@@ -22,7 +24,10 @@ object VpnModeSwitcher {
         val start = System.currentTimeMillis()
         while (System.currentTimeMillis() - start < timeoutMs) {
             if (condition()) return
-            try { Thread.sleep(80) } catch (_: Throwable) {}
+            try {
+                Thread.sleep(80)
+            } catch (_: Throwable) {
+            }
         }
     }
 
@@ -30,8 +35,53 @@ object VpnModeSwitcher {
         val appCtx = ctx.applicationContext
         worker.execute {
             stopDnsVpn(appCtx)
-            waitUntil({ !CSVpnService.isRunning }, 5000)
+            stopAmneziaWireGuard(appCtx)
+            stopHysteria(appCtx)
+            waitUntil(
+                {
+                    !CSVpnService.isRunning &&
+                            !CSAmneziaWireGuardService.isRunning &&
+                            !CSHysteriaService.isRunning
+                },
+                5000
+            )
             startWireGuard(appCtx, config)
+        }
+    }
+
+    fun switchToAmneziaWireGuard(ctx: Context, config: String) {
+        val appCtx = ctx.applicationContext
+        worker.execute {
+            stopDnsVpn(appCtx)
+            stopWireGuard(appCtx)
+            stopHysteria(appCtx)
+            waitUntil(
+                {
+                    !CSVpnService.isRunning &&
+                            !CSWireGuardService.isRunning &&
+                            !CSHysteriaService.isRunning
+                },
+                5000
+            )
+            startAmneziaWireGuard(appCtx, config)
+        }
+    }
+
+    fun switchToHysteria(ctx: Context, server: String, auth: String, sni: String) {
+        val appCtx = ctx.applicationContext
+        worker.execute {
+            stopDnsVpn(appCtx)
+            stopWireGuard(appCtx)
+            stopAmneziaWireGuard(appCtx)
+            waitUntil(
+                {
+                    !CSVpnService.isRunning &&
+                            !CSWireGuardService.isRunning &&
+                            !CSAmneziaWireGuardService.isRunning
+                },
+                5000
+            )
+            startHysteria(appCtx, server, auth, sni)
         }
     }
 
@@ -39,7 +89,16 @@ object VpnModeSwitcher {
         val appCtx = ctx.applicationContext
         worker.execute {
             stopWireGuard(appCtx)
-            waitUntil({ !CSWireGuardService.isRunning }, 5000)
+            stopAmneziaWireGuard(appCtx)
+            stopHysteria(appCtx)
+            waitUntil(
+                {
+                    !CSWireGuardService.isRunning &&
+                            !CSAmneziaWireGuardService.isRunning &&
+                            !CSHysteriaService.isRunning
+                },
+                5000
+            )
             startDnsVpn(appCtx)
         }
     }
@@ -55,6 +114,38 @@ object VpnModeSwitcher {
         val i = Intent(ctx, CSWireGuardService::class.java).apply {
             action = CSWireGuardService.ACTION_START
             putExtra(CSWireGuardService.EXTRA_WG_CONFIG, config)
+        }
+        startCompat(ctx, i, true)
+    }
+
+    fun stopAmneziaWireGuard(ctx: Context) {
+        val i = Intent(ctx, CSAmneziaWireGuardService::class.java).apply {
+            action = CSAmneziaWireGuardService.ACTION_STOP
+        }
+        startCompat(ctx, i, false)
+    }
+
+    fun startAmneziaWireGuard(ctx: Context, config: String) {
+        val i = Intent(ctx, CSAmneziaWireGuardService::class.java).apply {
+            action = CSAmneziaWireGuardService.ACTION_START
+            putExtra(CSAmneziaWireGuardService.EXTRA_AWG_CONFIG, config)
+        }
+        startCompat(ctx, i, true)
+    }
+
+    fun stopHysteria(ctx: Context) {
+        val i = Intent(ctx, CSHysteriaService::class.java).apply {
+            action = CSHysteriaService.ACTION_STOP
+        }
+        startCompat(ctx, i, false)
+    }
+
+    fun startHysteria(ctx: Context, server: String, auth: String, sni: String) {
+        val i = Intent(ctx, CSHysteriaService::class.java).apply {
+            action = CSHysteriaService.ACTION_START
+            putExtra(CSHysteriaService.EXTRA_SERVER, server)
+            putExtra(CSHysteriaService.EXTRA_AUTH, auth)
+            putExtra(CSHysteriaService.EXTRA_SNI, sni)
         }
         startCompat(ctx, i, true)
     }
