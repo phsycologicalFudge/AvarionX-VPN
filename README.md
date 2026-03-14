@@ -94,6 +94,11 @@ https://github.com/phsycologicalFudge/AvarionX-VPN/releases
   <img src="https://raw.githubusercontent.com/phsycologicalFudge/AvarionX-VPN/main/assets/gitImages/1.jpg" width="220">
   <img src="https://raw.githubusercontent.com/phsycologicalFudge/AvarionX-VPN/main/assets/gitImages/2.jpg" width="220">
   <img src="https://raw.githubusercontent.com/phsycologicalFudge/AvarionX-VPN/main/assets/gitImages/3.jpg" width="220">
+  <img src="https://raw.githubusercontent.com/phsycologicalFudge/AvarionX-VPN/main/assets/gitImages/4.jpg" width="220">
+  <img src="https://raw.githubusercontent.com/phsycologicalFudge/AvarionX-VPN/main/assets/gitImages/5.jpg" width="220">
+  <img src="https://raw.githubusercontent.com/phsycologicalFudge/AvarionX-VPN/main/assets/gitImages/6.jpg" width="220">
+  <img src="https://raw.githubusercontent.com/phsycologicalFudge/AvarionX-VPN/main/assets/gitImages/7.jpg" width="220">
+
 </div>
 
 ## Privacy
