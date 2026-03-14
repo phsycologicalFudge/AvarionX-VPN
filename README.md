@@ -1,6 +1,6 @@
 <div align="center">
 
-<img src="https://github.com/user-attachments/assets/1b8aca6b-1605-49d6-b542-76b99fb3438a" width="140" alt="ColourSwift logo">
+<img src="https://github.com/phsycologicalFudge/AvarionX-VPN/blob/main/assets/icons/icon.png" width="140" alt="ColourSwift logo">
 
 # AvarionX Secure VPN
 
