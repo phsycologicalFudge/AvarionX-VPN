@@ -901,7 +901,7 @@ abstract class AppLocalizations {
   /// No description provided for @networkCardBlocklistsTitle.
   ///
   /// In en, this message translates to:
-  /// **'Blocklists'**
+  /// **'S.H.I.E.L.D'**
   String get networkCardBlocklistsTitle;
 
   /// No description provided for @networkCardBlocklistsSubtitle.
@@ -2101,7 +2101,7 @@ abstract class AppLocalizations {
   /// No description provided for @homeFeatureSecureVpnTitle.
   ///
   /// In en, this message translates to:
-  /// **'Secure VPN'**
+  /// **'AvarionX Secure VPN'**
   String get homeFeatureSecureVpnTitle;
 
   /// No description provided for @homeFeatureSecureVpnDesc.
@@ -2167,7 +2167,7 @@ abstract class AppLocalizations {
   /// No description provided for @vpnSignInRequiredBody.
   ///
   /// In en, this message translates to:
-  /// **'Sign in once with your email to receive 10 GB of free VPN data, renewed monthly'**
+  /// **'Sign in once with your email to receive 10GB of free VPN data, reset monthly'**
   String get vpnSignInRequiredBody;
 
   /// No description provided for @vpnCancel.
@@ -2233,7 +2233,7 @@ abstract class AppLocalizations {
   /// No description provided for @vpnTitleSecure.
   ///
   /// In en, this message translates to:
-  /// **'Secure VPN'**
+  /// **'AvarionX Secure VPN'**
   String get vpnTitleSecure;
 
   /// No description provided for @vpnStatusConnected.
@@ -2293,7 +2293,7 @@ abstract class AppLocalizations {
   /// No description provided for @vpnBlocklistsTitle.
   ///
   /// In en, this message translates to:
-  /// **'Secure VPN Blocklists'**
+  /// **'S.H.I.E.L.D.'**
   String get vpnBlocklistsTitle;
 
   /// No description provided for @vpnSave.
@@ -2809,7 +2809,7 @@ abstract class AppLocalizations {
   /// No description provided for @vpnSettingsAccountTitle.
   ///
   /// In en, this message translates to:
-  /// **'Account'**
+  /// **'My Account'**
   String get vpnSettingsAccountTitle;
 
   /// No description provided for @vpnSettingsSignInToContinue.

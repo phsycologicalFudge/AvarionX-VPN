@@ -1,7 +1,14 @@
+import 'dart:async';
 import 'dart:math' as math;
+import 'dart:typed_data';
+import 'dart:ui' as ui;
+
 import 'package:flutter/material.dart';
+import 'package:flutter/rendering.dart';
 import 'package:flutter_map/flutter_map.dart';
+import 'package:flutter_map_tile_caching/flutter_map_tile_caching.dart';
 import 'package:latlong2/latlong.dart';
+
 import 'animated_connecting_route_layer.dart';
 
 class FullVpnServerLocation {
@@ -50,6 +57,18 @@ class _FullVpnLocationMapCardState extends State<FullVpnLocationMapCard>
   late final AnimationController _pulseCtrl;
   late final AnimationController _focusCtrl;
 
+  final GlobalKey _mapRepaintKey = GlobalKey();
+
+  Uint8List? _snapshotPng;
+  bool _snapshotVisible = false;
+  Timer? _snapshotTimer;
+  bool _snapshotInFlight = false;
+  int _lastSnapshotMs = 0;
+
+  late final FMTCStore _tileStore;
+  late final FMTCTileProvider _tileProvider;
+  bool _tileStoreReady = false;
+
   LatLng? _fromCenter;
   LatLng? _toCenter;
   double _fromZoom = 2.0;
@@ -62,34 +81,6 @@ class _FullVpnLocationMapCardState extends State<FullVpnLocationMapCard>
     const LatLng(-85.0, -180.0),
     const LatLng(85.0, 180.0),
   );
-
-  LatLngBounds _areaBounds() {
-    final pts = <LatLng>[];
-
-    if (_hasIpPoint) pts.add(_ipCenter());
-    for (final s in widget.servers) {
-      pts.add(s.point);
-    }
-
-    if (pts.isEmpty) {
-      return LatLngBounds(
-        const LatLng(-60.0, -120.0),
-        const LatLng(70.0, 120.0),
-      );
-    }
-
-    final b = LatLngBounds.fromPoints(pts);
-
-    final south = b.south < _worldBounds.south ? _worldBounds.south : b.south;
-    final north = b.north > _worldBounds.north ? _worldBounds.north : b.north;
-    final west = b.west < _worldBounds.west ? _worldBounds.west : b.west;
-    final east = b.east > _worldBounds.east ? _worldBounds.east : b.east;
-
-    return LatLngBounds(
-      LatLng(south, west),
-      LatLng(north, east),
-    );
-  }
 
   bool _focusQueued = false;
 
@@ -191,24 +182,51 @@ class _FullVpnLocationMapCardState extends State<FullVpnLocationMapCard>
   @override
   void initState() {
     super.initState();
+
     _mapController = MapController();
+
     _pulseCtrl = AnimationController(
       vsync: this,
       duration: const Duration(milliseconds: 1400),
     )..repeat();
+
     _focusCtrl = AnimationController(
       vsync: this,
       duration: const Duration(milliseconds: 650),
     )..addListener(_tickFocus);
 
+    _tileStore = const FMTCStore('cs_dark_cartodb');
+
+    _tileProvider = FMTCTileProvider(
+      stores: const {
+        'cs_dark_cartodb': BrowseStoreStrategy.readUpdateCreate,
+      },
+      loadingStrategy: BrowseLoadingStrategy.cacheFirst,
+    );
+
+    _initTileStore();
+
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
       _queueFocus(force: true);
+      _captureSnapshotForABit(msVisible: 0);
     });
+  }
+
+  Future<void> _initTileStore() async {
+    try {
+      final ready = await _tileStore.manage.ready;
+      if (!ready) {
+        await _tileStore.manage.create();
+      }
+    } catch (_) {}
+    if (!mounted) return;
+    setState(() => _tileStoreReady = true);
   }
 
   @override
   void dispose() {
+    _snapshotTimer?.cancel();
     _focusCtrl.removeListener(_tickFocus);
     _focusCtrl.dispose();
     _pulseCtrl.dispose();
@@ -369,6 +387,73 @@ class _FullVpnLocationMapCardState extends State<FullVpnLocationMapCard>
     return (a - b).abs() > 0.002;
   }
 
+  Future<void> _captureSnapshotForABit({required int msVisible}) async {
+    if (!mounted) return;
+
+    final now = DateTime.now().millisecondsSinceEpoch;
+    if (now - _lastSnapshotMs < 500) return;
+    if (_snapshotInFlight) return;
+
+    _snapshotInFlight = true;
+    _lastSnapshotMs = now;
+
+    try {
+      final ctx = _mapRepaintKey.currentContext;
+      if (ctx == null) {
+        _snapshotInFlight = false;
+        return;
+      }
+
+      final ro = ctx.findRenderObject();
+      if (ro is! RenderRepaintBoundary) {
+        _snapshotInFlight = false;
+        return;
+      }
+
+      final img = await ro.toImage(pixelRatio: ui.window.devicePixelRatio);
+      final bd = await img.toByteData(format: ui.ImageByteFormat.png);
+      img.dispose();
+
+      if (bd == null || !mounted) {
+        _snapshotInFlight = false;
+        return;
+      }
+
+      final bytes = bd.buffer.asUint8List();
+      if (bytes.isEmpty) {
+        _snapshotInFlight = false;
+        return;
+      }
+
+      setState(() {
+        _snapshotPng = bytes;
+        _snapshotVisible = msVisible > 0;
+      });
+
+      _snapshotTimer?.cancel();
+
+      if (msVisible > 0) {
+        _snapshotTimer = Timer(Duration(milliseconds: msVisible), () {
+          if (!mounted) return;
+          setState(() => _snapshotVisible = false);
+          Timer(const Duration(milliseconds: 220), () {
+            if (!mounted) return;
+            if (!_snapshotVisible) setState(() => _snapshotPng = null);
+          });
+        });
+      }
+    } catch (_) {
+      if (mounted) {
+        setState(() {
+          _snapshotVisible = false;
+          _snapshotPng = null;
+        });
+      }
+    } finally {
+      _snapshotInFlight = false;
+    }
+  }
+
   @override
   void didUpdateWidget(covariant FullVpnLocationMapCard oldWidget) {
     super.didUpdateWidget(oldWidget);
@@ -388,6 +473,10 @@ class _FullVpnLocationMapCardState extends State<FullVpnLocationMapCard>
     final lonChanged = _changedDouble(oldWidget.lon, widget.lon);
     final connChanged = oldWidget.connected != widget.connected;
     final connectingChanged = oldWidget.isConnecting != widget.isConnecting;
+
+    if (connChanged || connectingChanged) {
+      _captureSnapshotForABit(msVisible: 2400);
+    }
 
     if (latChanged || lonChanged || connChanged || connectingChanged || parentSelectedChanged) {
       _queueFocus(force: parentSelectedChanged);
@@ -488,10 +577,26 @@ class _FullVpnLocationMapCardState extends State<FullVpnLocationMapCard>
     final sel = _selectedServer();
     final showRoute = _hasIpPoint && sel != null && (widget.isConnecting || widget.connected);
 
+    final tileProvider = _tileStoreReady ? _tileProvider : null;
+
     return ClipRRect(
       borderRadius: BorderRadius.circular(22),
       child: Stack(
         children: [
+          if (_snapshotPng != null)
+            Positioned.fill(
+              child: AnimatedOpacity(
+                opacity: _snapshotVisible ? 1.0 : 0.0,
+                duration: const Duration(milliseconds: 220),
+                curve: Curves.easeOut,
+                child: Image.memory(
+                  _snapshotPng!,
+                  fit: BoxFit.cover,
+                  gaplessPlayback: true,
+                  filterQuality: FilterQuality.low,
+                ),
+              ),
+            ),
           Positioned.fill(
             child: Listener(
               behavior: HitTestBehavior.translucent,
@@ -508,6 +613,7 @@ class _FullVpnLocationMapCardState extends State<FullVpnLocationMapCard>
                 _userTouchBlockUntilMs = DateTime.now().millisecondsSinceEpoch + 650;
               },
               child: RepaintBoundary(
+                key: _mapRepaintKey,
                 child: FlutterMap(
                   mapController: _mapController,
                   options: MapOptions(
@@ -516,14 +622,23 @@ class _FullVpnLocationMapCardState extends State<FullVpnLocationMapCard>
                     minZoom: _minZoom,
                     maxZoom: _maxZoom,
                     backgroundColor: Colors.black,
-                    cameraConstraint: CameraConstraint.contain(
-                      bounds: _worldBounds,
-                    ),
+                    cameraConstraint: CameraConstraint.contain(bounds: _worldBounds),
                     interactionOptions: const InteractionOptions(
                       flags: InteractiveFlag.drag |
                       InteractiveFlag.pinchZoom |
                       InteractiveFlag.doubleTapZoom,
                     ),
+                    onMapEvent: (e) {
+                      if (e is MapEventMoveEnd) {
+                        if (_snapshotVisible) {
+                          setState(() => _snapshotVisible = false);
+                          Timer(const Duration(milliseconds: 220), () {
+                            if (!mounted) return;
+                            if (!_snapshotVisible) setState(() => _snapshotPng = null);
+                          });
+                        }
+                      }
+                    },
                     onTap: (_, p) {
                       final s = _nearestServer(p);
                       if (s == null) return;
@@ -532,13 +647,16 @@ class _FullVpnLocationMapCardState extends State<FullVpnLocationMapCard>
                   ),
                   children: [
                     TileLayer(
-                      urlTemplate: 'https://{s}.basemaps.cartocdn.com/dark_nolabels/{z}/{x}/{y}{r}.png',
+                      urlTemplate:
+                      'https://{s}.basemaps.cartocdn.com/dark_nolabels/{z}/{x}/{y}{r}.png',
                       subdomains: const ['a', 'b', 'c', 'd'],
                       userAgentPackageName: 'com.colourswift.avarionxvpn',
                       maxZoom: _maxZoom,
                       maxNativeZoom: 6,
-                      keepBuffer: 4,
+                      keepBuffer: 6,
+                      tileProvider: tileProvider,
                     ),
+                    if (showRoute)AnimatedConnectingRouteLayer(from: _ipCenter(), to: sel!.point, animate: widget.isConnecting,),
                     if (markers.isNotEmpty) MarkerLayer(markers: markers),
                   ],
                 ),

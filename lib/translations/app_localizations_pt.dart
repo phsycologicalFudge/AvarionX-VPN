@@ -1125,7 +1125,7 @@ class AppLocalizationsPt extends AppLocalizations {
   String get homeUpgrade => 'Upgrade';
 
   @override
-  String get homeFeatureSecureVpnTitle => 'Secure VPN';
+  String get homeFeatureSecureVpnTitle => 'AvarionX Secure VPN';
 
   @override
   String get homeFeatureSecureVpnDesc =>
@@ -1163,7 +1163,7 @@ class AppLocalizationsPt extends AppLocalizations {
 
   @override
   String get vpnSignInRequiredBody =>
-      'Sign in once with your email to receive 10 GB of free VPN data, renewed monthly';
+      'Sign in once with your email to receive 10GB of free VPN data, reset monthly';
 
   @override
   String get vpnCancel => 'Cancel';
@@ -1200,7 +1200,7 @@ class AppLocalizationsPt extends AppLocalizations {
   }
 
   @override
-  String get vpnTitleSecure => 'Secure VPN';
+  String get vpnTitleSecure => 'AvarionX Secure VPN';
 
   @override
   String get vpnStatusConnected => 'Connected';
@@ -1234,7 +1234,7 @@ class AppLocalizationsPt extends AppLocalizations {
   }
 
   @override
-  String get vpnBlocklistsTitle => 'Secure VPN Blocklists';
+  String get vpnBlocklistsTitle => 'S.H.I.E.L.D.';
 
   @override
   String get vpnSave => 'Save';
@@ -1521,7 +1521,7 @@ class AppLocalizationsPt extends AppLocalizations {
   String get vpnSettingsBrandFooter => 'Secured by VX-Link';
 
   @override
-  String get vpnSettingsAccountTitle => 'Account';
+  String get vpnSettingsAccountTitle => 'My Account';
 
   @override
   String get vpnSettingsSignInToContinue => 'Sign in to continue';

@@ -512,7 +512,7 @@
       "country": {}
     }
   },
-  "vpnTitleSecure": "Secure VPN",
+  "vpnTitleSecure": "AvarionX Secure VPN",
   "vpnStatusConnected": "接続済み",
   "vpnSubtitleEstablishingTunnel": "トンネルを確立中...",
   "vpnSubtitleFindingLocation": "場所を検索中...",

@@ -1151,7 +1151,7 @@ class AppLocalizationsJa extends AppLocalizations {
   }
 
   @override
-  String get vpnTitleSecure => 'Secure VPN';
+  String get vpnTitleSecure => 'AvarionX Secure VPN';
 
   @override
   String get vpnStatusConnected => '接続済み';

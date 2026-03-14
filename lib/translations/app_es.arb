@@ -223,7 +223,7 @@
   "networkCardStatusReady": "Listo",
   "networkCardStatusOpen": "Abrir",
   "networkCardStatusComingSoon": "Próximamente",
-  "networkCardBlocklistsTitle": "Listas de bloqueo",
+  "networkCardBlocklistsTitle": "S.H.I.E.L.D",
   "networkCardBlocklistsSubtitle": "Controles de filtrado",
   "networkCardUpstreamTitle": "Upstream",
   "networkCardUpstreamSubtitle": "Selección de resolvedor",
@@ -512,7 +512,7 @@
       "country": {}
     }
   },
-  "vpnTitleSecure": "Secure VPN",
+  "vpnTitleSecure": "AvarionX Secure VPN",
   "vpnStatusConnected": "Conectado",
   "vpnSubtitleEstablishingTunnel": "Estableciendo túnel...",
   "vpnSubtitleFindingLocation": "Buscando ubicación...",

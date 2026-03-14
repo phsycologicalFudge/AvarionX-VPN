@@ -171,6 +171,22 @@ class _FullVpnModeScreenState extends State<FullVpnModeScreen>
           textStyle: const TextStyle(fontWeight: FontWeight.w800),
         ),
       ),
+      snackBarTheme: SnackBarThemeData(
+        backgroundColor: scheme.surfaceContainerHighest.withOpacity(0.95),
+        contentTextStyle: TextStyle(
+          color: scheme.onSurface,
+          fontWeight: FontWeight.w700,
+        ),
+        behavior: SnackBarBehavior.floating,
+        elevation: 0,
+        insetPadding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(16),
+          side: BorderSide(
+            color: scheme.outlineVariant.withOpacity(0.25),
+          ),
+        ),
+      ),
     );
   }
 
@@ -628,9 +644,25 @@ class _FullVpnModeScreenState extends State<FullVpnModeScreen>
             borderRadius: BorderRadius.circular(6),
           ),
           const SizedBox(height: 6),
-          Text(
-            "${c.formatBytes(c.usedBytes)} / ${c.formatBytes(uiLimit)}",
-            style: theme.textTheme.bodySmall,
+          Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                "${c.formatBytes(c.usedBytes)} / ${c.formatBytes(uiLimit)}",
+                style: theme.textTheme.bodySmall,
+              ),
+              if (c.token.isEmpty) ...[
+                const SizedBox(height: 6),
+                Text(
+                  "Fun fact: Signing in gives you 10 GB of free VPN usage every month.",
+                  style: theme.textTheme.bodySmall?.copyWith(
+                    color: scheme.onSurfaceVariant,
+                    fontWeight: FontWeight.w600,
+                    height: 1.25,
+                  ),
+                ),
+              ],
+            ],
           ),
         ],
       );
@@ -688,8 +720,8 @@ class _FullVpnModeScreenState extends State<FullVpnModeScreen>
     final titleCountry = c.connectingUi
         ? l10n.vpnStatusConnectingEllipsis
         : (c.connected
-        ? (country.isNotEmpty ? country : l10n.vpnTitleSecure)
-        : l10n.vpnTitleSecure);
+        ? (country.isNotEmpty ? country : l10n.vpnStatusConnected)
+        : "Disconnected");
 
     final subtitle = c.connectingUi
         ? l10n.vpnSubtitleEstablishingTunnel
@@ -856,10 +888,6 @@ class _FullVpnModeScreenState extends State<FullVpnModeScreen>
               child: ElevatedButton(
                 onPressed: canConnect
                     ? () async {
-                  if (c.token.isEmpty) {
-                    await _showSignInPopup();
-                    return;
-                  }
                   final ok = await _ensureVpnPermissionIntro();
                   if (!ok) return;
                   await c.connect();
@@ -887,7 +915,9 @@ class _FullVpnModeScreenState extends State<FullVpnModeScreen>
         if (c.softCapReached) ...[
           const SizedBox(height: 8),
           Text(
-            "Free monthly limit reached. Upgrade for unlimited VPN.",
+            c.token.isEmpty
+                ? "Trial limit reached. Sign in or upgrade for more VPN data."
+                : "Free monthly limit reached. Upgrade for unlimited VPN.",
             style: theme.textTheme.bodySmall?.copyWith(
               color: scheme.primary,
               fontWeight: FontWeight.w700,
@@ -977,7 +1007,6 @@ class _FullVpnModeScreenState extends State<FullVpnModeScreen>
     final scheme = theme.colorScheme;
 
     final pro = _hasAnyProEntitlement();
-
     final entries = c.blocklists.entries.toList();
 
     bool isMalwareKey(String k) {
@@ -987,6 +1016,52 @@ class _FullVpnModeScreenState extends State<FullVpnModeScreen>
       if (s.contains("threat")) return true;
       if (s.contains("phishing")) return true;
       return false;
+    }
+
+    String prettyName(String key) {
+      switch (key.toLowerCase().trim()) {
+        case "ads":
+          return "Ads";
+        case "trackers":
+          return "Trackers";
+        case "malware":
+          return "Malware";
+        case "adult":
+          return "Adult";
+        case "gambling":
+          return "Gambling";
+        case "social":
+          return "Social Media";
+        case "crypto":
+          return "Crypto";
+        default:
+          final parts = key.split(RegExp(r"[_\s-]+"));
+          return parts
+              .where((e) => e.trim().isNotEmpty)
+              .map((e) => e[0].toUpperCase() + e.substring(1).toLowerCase())
+              .join(" ");
+      }
+    }
+
+    String descriptionFor(String key) {
+      switch (key.toLowerCase().trim()) {
+        case "ads":
+          return "Blocks advertising domains across websites and apps.";
+        case "trackers":
+          return "Blocks tracking, telemetry and analytics domains.";
+        case "malware":
+          return "Blocks malicious, phishing and high-risk domains.";
+        case "adult":
+          return "Blocks adult websites and explicit content domains.";
+        case "gambling":
+          return "Blocks gambling, betting and casino domains.";
+        case "social":
+          return "Blocks major social media and related platform domains.";
+        case "crypto":
+          return "Blocks crypto mining, exchange and related domains.";
+        default:
+          return "Blocks domains in this category at network level.";
+      }
     }
 
     final malware = <MapEntry<String, bool>>[];
@@ -1000,31 +1075,122 @@ class _FullVpnModeScreenState extends State<FullVpnModeScreen>
       }
     }
 
-    malware.sort((a, b) => a.key.compareTo(b.key));
-    premium.sort((a, b) => a.key.compareTo(b.key));
+    malware.sort((a, b) => prettyName(a.key).compareTo(prettyName(b.key)));
+    premium.sort((a, b) => prettyName(a.key).compareTo(prettyName(b.key)));
 
-    Widget premiumHeader() {
+    Widget pageHeader() {
+      return Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            l10n.vpnBlocklistsTitle,
+            style: theme.textTheme.headlineMedium?.copyWith(
+              fontWeight: FontWeight.w800,
+              fontSize: 22,
+              letterSpacing: -0.3,
+              color: scheme.onSurface,
+            ),
+          ),
+          const SizedBox(height: 8),
+          Text(
+            "Choose which categories are filtered before traffic reaches your device.",
+            style: theme.textTheme.bodyMedium?.copyWith(
+              color: scheme.onSurfaceVariant,
+              fontWeight: FontWeight.w500,
+              height: 1.35,
+            ),
+          ),
+        ],
+      );
+    }
+
+    Widget sectionHeader({
+      required String title,
+      required String body,
+      bool premiumOnly = false,
+    }) {
       return Padding(
-        padding: const EdgeInsets.only(top: 10, bottom: 8),
+        padding: const EdgeInsets.fromLTRB(16, 14, 16, 10),
         child: Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Expanded(
-              child: Text(
-                "[Premium]",
-                style: theme.textTheme.titleSmall?.copyWith(
-                  fontWeight: FontWeight.w900,
-                  color: scheme.onSurface,
-                ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    title,
+                    style: theme.textTheme.titleLarge?.copyWith(
+                      fontWeight: FontWeight.w800,
+                      fontSize: 17,
+                      letterSpacing: -0.2,
+                      color: scheme.onSurface,
+                    ),
+                  ),
+                  const SizedBox(height: 5),
+                  Text(
+                    body,
+                    style: theme.textTheme.bodySmall?.copyWith(
+                      color: scheme.onSurfaceVariant,
+                      fontWeight: FontWeight.w500,
+                      height: 1.35,
+                    ),
+                  ),
+                ],
               ),
             ),
-            if (!pro)
-              Text(
-                "pro required",
-                style: theme.textTheme.labelMedium?.copyWith(
-                  color: scheme.onSurfaceVariant,
-                  fontWeight: FontWeight.w700,
+            if (premiumOnly) ...[
+              const SizedBox(width: 12),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+                decoration: BoxDecoration(
+                  color: pro
+                      ? const Color(0xFF1B7F4B).withOpacity(0.16)
+                      : const Color(0xFFB8860B).withOpacity(0.16),
+                  borderRadius: BorderRadius.circular(999),
+                  border: Border.all(
+                    color: pro
+                        ? const Color(0xFF1B7F4B).withOpacity(0.28)
+                        : const Color(0xFFB8860B).withOpacity(0.28),
+                  ),
+                ),
+                child: Text(
+                  pro ? "Premium active" : "Premium only",
+                  style: theme.textTheme.labelSmall?.copyWith(
+                    color: pro ? const Color(0xFFBFF7D4) : const Color(0xFFFFE7A3),
+                    fontWeight: FontWeight.w800,
+                    fontSize: 11,
+                    letterSpacing: 0.1,
+                  ),
                 ),
               ),
+            ],
+          ],
+        ),
+      );
+    }
+
+    Widget sectionContainer({
+      required Widget header,
+      required List<Widget> children,
+    }) {
+      return Container(
+        decoration: BoxDecoration(
+          color: scheme.surface.withOpacity(0.22),
+          borderRadius: BorderRadius.circular(20),
+          border: Border.all(
+            color: scheme.outlineVariant.withOpacity(0.16),
+          ),
+        ),
+        child: Column(
+          children: [
+            header,
+            Divider(
+              height: 1,
+              thickness: 1,
+              color: scheme.outlineVariant.withOpacity(0.14),
+            ),
+            ...children,
           ],
         ),
       );
@@ -1034,56 +1200,118 @@ class _FullVpnModeScreenState extends State<FullVpnModeScreen>
         MapEntry<String, bool> e, {
           required bool enabled,
           required bool forceOff,
+          required bool isLast,
         }) {
       final value = forceOff ? false : e.value;
+      final title = prettyName(e.key);
+      final body = descriptionFor(e.key);
 
-      return SwitchListTile(
-        contentPadding: EdgeInsets.zero,
-        value: value,
-        title: Text(
-          e.key.toLowerCase(),
-          style: theme.textTheme.bodyMedium?.copyWith(
-            fontWeight: FontWeight.w800,
-            color: enabled ? scheme.onSurface : scheme.onSurfaceVariant,
-          ),
+      return Opacity(
+        opacity: enabled ? 1.0 : 0.58,
+        child: Column(
+          children: [
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 13, 10, 13),
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.center,
+                children: [
+                  Expanded(
+                    child: Padding(
+                      padding: const EdgeInsets.only(right: 12),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            title,
+                            style: theme.textTheme.bodyLarge?.copyWith(
+                              fontWeight: FontWeight.w700,
+                              fontSize: 16,
+                              color: enabled ? scheme.onSurface : scheme.onSurfaceVariant,
+                            ),
+                          ),
+                          const SizedBox(height: 3),
+                          Text(
+                            body,
+                            style: theme.textTheme.bodySmall?.copyWith(
+                              color: scheme.onSurfaceVariant.withOpacity(0.92),
+                              fontWeight: FontWeight.w500,
+                              height: 1.3,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                  Transform.scale(
+                    scale: 0.92,
+                    child: Switch(
+                      value: value,
+                      onChanged: !enabled
+                          ? null
+                          : (v) async {
+                        final m = c.blocklists;
+                        if (m is Map<String, bool>) {
+                          m[e.key] = v;
+                          await c.persistBlocklists();
+                          c.notifyListeners();
+                        }
+                      },
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            if (!isLast)
+              Divider(
+                height: 1,
+                thickness: 1,
+                indent: 16,
+                endIndent: 16,
+                color: scheme.outlineVariant.withOpacity(0.12),
+              ),
+          ],
         ),
-        onChanged: !enabled
-            ? null
-            : (v) async {
-          final m = c.blocklists;
-          if (m is Map<String, bool>) {
-            m[e.key] = v;
-            await c.persistBlocklists();
-            c.notifyListeners();
-          }
-        },
       );
     }
 
     return ListView(
-      padding: const EdgeInsets.fromLTRB(16, 12, 16, 90),
+      padding: const EdgeInsets.fromLTRB(16, 14, 16, 90),
       children: [
-        Text(
-          l10n.vpnBlocklistsTitle,
-          style: theme.textTheme.titleMedium?.copyWith(
-            fontWeight: FontWeight.w900,
+        pageHeader(),
+        const SizedBox(height: 18),
+        sectionContainer(
+          header: sectionHeader(
+            title: "Essential Protection",
+            body: "This core security filter designed to block harmful domains and common threats.",
+          ),
+          children: List.generate(
+            malware.length,
+                (i) => tile(
+              malware[i],
+              enabled: true,
+              forceOff: false,
+              isLast: i == malware.length - 1,
+            ),
           ),
         ),
-        const SizedBox(height: 10),
-
-        ...malware.map((e) => tile(e, enabled: true, forceOff: false)).toList(),
-
-        premiumHeader(),
-        Opacity(
-          opacity: pro ? 1.0 : 0.55,
-          child: Column(
-            children: premium
-                .map((e) => tile(e, enabled: pro, forceOff: !pro))
-                .toList(),
+        const SizedBox(height: 14),
+        sectionContainer(
+          header: sectionHeader(
+            title: "Premium Filters",
+            body: "Extra categories for stronger control over browsing, ads and even trackers.",
+            premiumOnly: true,
+          ),
+          children: List.generate(
+            premium.length,
+                (i) => tile(
+              premium[i],
+              enabled: pro,
+              forceOff: !pro,
+              isLast: i == premium.length - 1,
+            ),
           ),
         ),
-
-        const SizedBox(height: 12),
+        const SizedBox(height: 18),
         SizedBox(
           width: double.infinity,
           child: ElevatedButton(
@@ -1126,6 +1354,7 @@ class _FullVpnModeScreenState extends State<FullVpnModeScreen>
   }
 
   bool _hasAnyProEntitlement() {
+    if (c.token.isEmpty || c.me == null) return false;
     final serverPlan = (c.me?["plan"] ?? "").toString().trim().toLowerCase();
     return PurchaseService.isPro || serverPlan == "pro";
   }
@@ -1156,9 +1385,7 @@ class _FullVpnModeScreenState extends State<FullVpnModeScreen>
                 automaticallyImplyLeading: false,
                 elevation: 0,
                 backgroundColor: Colors.transparent,
-                actions: _hasAnyProEntitlement()
-                    ? const []
-                    : [
+                actions: [
                   Padding(
                     padding: const EdgeInsets.only(right: 10),
                     child: Center(
@@ -1183,18 +1410,24 @@ class _FullVpnModeScreenState extends State<FullVpnModeScreen>
                             minimumSize: Size.zero,
                             visualDensity: const VisualDensity(horizontal: -2, vertical: -2),
                             padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 0),
-                            foregroundColor: const Color(0xFFFFE7A3),
-                            backgroundColor: const Color(0xFFB8860B).withOpacity(0.22),
+                            foregroundColor: _hasAnyProEntitlement()
+                                ? const Color(0xFFBFF7D4)
+                                : const Color(0xFFFFE7A3),
+                            backgroundColor: _hasAnyProEntitlement()
+                                ? const Color(0xFF1B7F4B).withOpacity(0.22)
+                                : const Color(0xFFB8860B).withOpacity(0.22),
                             shape: RoundedRectangleBorder(
                               borderRadius: BorderRadius.circular(999),
                               side: BorderSide(
-                                color: const Color(0xFFB8860B).withOpacity(0.45),
+                                color: _hasAnyProEntitlement()
+                                    ? const Color(0xFF1B7F4B).withOpacity(0.45)
+                                    : const Color(0xFFB8860B).withOpacity(0.45),
                               ),
                             ),
                           ),
-                          child: const Text(
-                            "Upgrade",
-                            style: TextStyle(
+                          child: Text(
+                            _hasAnyProEntitlement() ? "Premium" : "Upgrade",
+                            style: const TextStyle(
                               fontWeight: FontWeight.w900,
                               fontSize: 12,
                               height: 1.0,

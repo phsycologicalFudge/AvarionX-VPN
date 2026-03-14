@@ -3,6 +3,9 @@ package com.colourswift.avarionxvpn.vpn.wireguard
 import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.content.Intent
+import android.net.ConnectivityManager
+import android.net.Network
+import android.net.NetworkCapabilities
 import android.net.VpnService
 import android.os.Build
 import android.util.Log
@@ -68,6 +71,7 @@ class CSWireGuardService : VpnService() {
             val raw = i.getStringExtra(EXTRA_WG_CONFIG) ?: ""
             val excludedJson = i.getStringExtra(EXTRA_EXCLUDED_APPS_JSON)
             val excludedPkgs = parseExcludedApps(excludedJson)
+
             if (raw.isBlank()) {
                 isRunning = false
                 starting = false
@@ -90,13 +94,35 @@ class CSWireGuardService : VpnService() {
             worker.execute {
                 try {
                     stopBackendOnly()
-                    val cfgText = withExcludedApps(raw, excludedPkgs)
+
+                    val cfgText0 = withExcludedApps(raw, excludedPkgs)
+                    val cfgText = withIpv6Support(cfgText0)
+
+                    val parseStart = System.nanoTime()
                     val cfg = Config.parse(cfgText.byteInputStream())
+                    val parseMs = (System.nanoTime() - parseStart) / 1_000_000
+
+                    logConfigSummary(cfg, excludedPkgs.size, parseMs)
+                    logNetState("pre_up")
+
+                    val upStart = System.nanoTime()
                     ensureBackend().setState(tunnel, Tunnel.State.UP, cfg)
+                    val upMs = (System.nanoTime() - upStart) / 1_000_000
+
                     up = true
                     isRunning = true
                     statusText = "Connected"
                     updateNotif(statusText)
+
+                    Log.i("CSWG", "WG UP ok ms=$upMs")
+                    logNetState("post_up")
+
+                    worker.execute {
+                        try {
+                            Thread.sleep(1500)
+                        } catch (_: Throwable) {}
+                        logNetState("post_up_1500ms")
+                    }
                 } catch (t: Throwable) {
                     Log.e("CSWG", "Failed to start WG", t)
                     up = false
@@ -224,6 +250,42 @@ class CSWireGuardService : VpnService() {
         return lines.joinToString("\n")
     }
 
+    private fun withIpv6Support(raw: String): String {
+        val lines = raw.replace("\r\n", "\n").split("\n").toMutableList()
+        var inPeer = false
+
+        for (idx in lines.indices) {
+            val t = lines[idx].trim()
+
+            if (t.startsWith("[") && t.endsWith("]")) {
+                inPeer = t.equals("[Peer]", ignoreCase = true)
+                continue
+            }
+
+            if (!inPeer) continue
+
+            if (t.startsWith("AllowedIPs", ignoreCase = true)) {
+                val parts = lines[idx].split("=", limit = 2)
+                if (parts.size != 2) continue
+
+                val key = parts[0].trim()
+                val rhs = parts[1].trim()
+                if (rhs.isEmpty()) continue
+
+                val items = rhs.split(",").map { it.trim() }.filter { it.isNotEmpty() }.toMutableList()
+                val hasV4Default = items.any { it.equals("0.0.0.0/0", ignoreCase = true) }
+                val hasV6Default = items.any { it.equals("::/0", ignoreCase = true) }
+
+                if (hasV4Default && !hasV6Default) {
+                    items.add("::/0")
+                    lines[idx] = "$key = " + items.joinToString(", ")
+                }
+            }
+        }
+
+        return lines.joinToString("\n")
+    }
+
     private fun stopBackendOnly() {
         try {
             backend?.setState(tunnel, Tunnel.State.DOWN, null)
@@ -263,5 +325,83 @@ class CSWireGuardService : VpnService() {
         worker.shutdownNow()
         isRunning = false
         super.onDestroy()
+    }
+
+    private fun logConfigSummary(cfg: Config, excludedCount: Int, parseMs: Long) {
+        try {
+            val iface = cfg.`interface`
+            val addrs = iface.addresses.map { it.toString() }.joinToString(", ")
+            val dns = iface.dnsServers.map { it.toString() }.joinToString(", ")
+            val peers = cfg.peers
+
+            val endpoints = peers.mapNotNull { p ->
+                try { p.endpoint?.toString() } catch (_: Throwable) { null }
+            }.joinToString(", ")
+
+            val allowed = peers.flatMap { p ->
+                try { p.allowedIps.map { it.toString() } } catch (_: Throwable) { emptyList() }
+            }.distinct().joinToString(", ")
+
+            Log.i(
+                "CSWG",
+                "cfg parseMs=$parseMs excluded=$excludedCount addrs=[$addrs] dns=[$dns] endpoints=[$endpoints] allowed=[$allowed]"
+            )
+        } catch (t: Throwable) {
+            Log.e("CSWG", "logConfigSummary failed", t)
+        }
+    }
+
+    private fun logNetState(phase: String) {
+        try {
+            val cm = getSystemService(ConnectivityManager::class.java)
+            if (cm == null) {
+                Log.i("CSWG", "net $phase cm=null")
+                return
+            }
+
+            val an = cm.activeNetwork
+            val anc = if (an != null) cm.getNetworkCapabilities(an) else null
+            val anlp = if (an != null) cm.getLinkProperties(an) else null
+
+            Log.i(
+                "CSWG",
+                "net $phase active=${an != null} caps=${capsToStr(anc)} if=${anlp?.interfaceName ?: ""} dns=${anlp?.dnsServers?.joinToString(",") ?: ""} routes=${anlp?.routes?.size ?: 0}"
+            )
+
+            val vpnNet = findVpnNetwork(cm)
+            val vpnc = if (vpnNet != null) cm.getNetworkCapabilities(vpnNet) else null
+            val vpnlp = if (vpnNet != null) cm.getLinkProperties(vpnNet) else null
+
+            Log.i(
+                "CSWG",
+                "net $phase vpn=${vpnNet != null} caps=${capsToStr(vpnc)} if=${vpnlp?.interfaceName ?: ""} dns=${vpnlp?.dnsServers?.joinToString(",") ?: ""} routes=${vpnlp?.routes?.joinToString(";") { it.toString() } ?: ""}"
+            )
+        } catch (t: Throwable) {
+            Log.e("CSWG", "logNetState failed phase=$phase", t)
+        }
+    }
+
+    private fun findVpnNetwork(cm: ConnectivityManager): Network? {
+        return try {
+            cm.allNetworks.firstOrNull { n ->
+                val c = cm.getNetworkCapabilities(n)
+                c != null && c.hasTransport(NetworkCapabilities.TRANSPORT_VPN)
+            }
+        } catch (_: Throwable) {
+            null
+        }
+    }
+
+    private fun capsToStr(c: NetworkCapabilities?): String {
+        if (c == null) return ""
+        val out = mutableListOf<String>()
+        if (c.hasTransport(NetworkCapabilities.TRANSPORT_VPN)) out.add("VPN")
+        if (c.hasTransport(NetworkCapabilities.TRANSPORT_WIFI)) out.add("WIFI")
+        if (c.hasTransport(NetworkCapabilities.TRANSPORT_CELLULAR)) out.add("CELL")
+        if (c.hasTransport(NetworkCapabilities.TRANSPORT_ETHERNET)) out.add("ETH")
+        if (c.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET)) out.add("INTERNET")
+        if (c.hasCapability(NetworkCapabilities.NET_CAPABILITY_VALIDATED)) out.add("VALIDATED")
+        if (c.hasCapability(NetworkCapabilities.NET_CAPABILITY_NOT_METERED)) out.add("UNMETERED")
+        return out.joinToString("|")
     }
 }

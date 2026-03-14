@@ -7,6 +7,8 @@ import 'package:provider/provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
 import 'translations/app_localizations.dart';
+import 'package:flutter/widgets.dart';
+import 'package:flutter_map_tile_caching/flutter_map_tile_caching.dart';
 
 class LanguageManager extends ChangeNotifier {
   String _code = 'system';
@@ -33,6 +35,7 @@ class LanguageManager extends ChangeNotifier {
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
+  await FMTCObjectBoxBackend().initialise();
 
   SystemChrome.setEnabledSystemUIMode(
     SystemUiMode.immersiveSticky,

@@ -224,7 +224,7 @@
   "networkCardStatusReady": "Ready",
   "networkCardStatusOpen": "Open",
   "networkCardStatusComingSoon": "Coming soon",
-  "networkCardBlocklistsTitle": "Blocklists",
+  "networkCardBlocklistsTitle": "S.H.I.E.L.D",
   "networkCardBlocklistsSubtitle": "Filtering controls",
   "networkCardUpstreamTitle": "Upstream",
   "networkCardUpstreamSubtitle": "Resolver selection",
@@ -481,7 +481,7 @@
     }
   },
   "homeUpgrade": "Upgrade",
-  "homeFeatureSecureVpnTitle": "Secure VPN",
+  "homeFeatureSecureVpnTitle": "AvarionX Secure VPN",
   "homeFeatureSecureVpnDesc": "Hide your IP and block unwanted content",
   "proActivated": "PRO activated",
   "proDeactivated": "PRO deactivated",
@@ -498,7 +498,7 @@
   "vpnSignInRequiredTitle": "Sign in required",
   "vpnClose": "Close",
   "vpnSignInRequiredBody": "Sign in to use Secure VPN.",
-  "vpnSignInRequiredBody": "Sign in once with your email to receive 10 GB of free VPN data, renewed monthly",
+  "vpnSignInRequiredBody": "Sign in once with your email to receive 10GB of free VPN data, reset monthly",
   "vpnCancel": "Cancel",
   "vpnSignIn": "Sign in",
   "vpnUsageLoading": "Loading usage...",
@@ -514,7 +514,7 @@
       "country": {}
     }
   },
-  "vpnTitleSecure": "Secure VPN",
+  "vpnTitleSecure": "AvarionX Secure VPN",
   "vpnStatusConnected": "Connected",
   "vpnSubtitleEstablishingTunnel": "Establishing tunnel...",
   "vpnSubtitleFindingLocation": "Finding location...",
@@ -535,7 +535,7 @@
       "max": {}
     }
   },
-  "vpnBlocklistsTitle": "Secure VPN Blocklists",
+  "vpnBlocklistsTitle": "S.H.I.E.L.D.",
   "vpnSave": "Save",
   "settingsSave": "Save",
   "settingsPremium": "Premium",
@@ -641,7 +641,7 @@
   "vpnSettingsAdTrackerProtectionTitle": "Optional ad and tracker protection",
   "vpnSettingsAdTrackerProtectionBody": "Enable additional blocking for ads and trackers in the Customisation tab.",
   "vpnSettingsBrandFooter": "Secured by VX-Link",
-  "vpnSettingsAccountTitle": "Account",
+  "vpnSettingsAccountTitle": "My Account",
   "vpnSettingsSignInToContinue": "Sign in to continue",
   "vpnSettingsAccountSyncBody": "Your plan and data usage sync to your account.",
   "vpnSettingsSignedIn": "Signed in",

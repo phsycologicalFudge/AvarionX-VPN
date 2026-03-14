@@ -460,7 +460,7 @@ class AppLocalizationsEs extends AppLocalizations {
   String get networkCardStatusComingSoon => 'Próximamente';
 
   @override
-  String get networkCardBlocklistsTitle => 'Listas de bloqueo';
+  String get networkCardBlocklistsTitle => 'S.H.I.E.L.D';
 
   @override
   String get networkCardBlocklistsSubtitle => 'Controles de filtrado';
@@ -1201,7 +1201,7 @@ class AppLocalizationsEs extends AppLocalizations {
   }
 
   @override
-  String get vpnTitleSecure => 'Secure VPN';
+  String get vpnTitleSecure => 'AvarionX Secure VPN';
 
   @override
   String get vpnStatusConnected => 'Conectado';

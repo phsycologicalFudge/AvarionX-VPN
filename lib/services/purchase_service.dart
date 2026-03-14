@@ -80,6 +80,56 @@ class PurchaseService {
     return _iap.queryProductDetails({subscriptionId, lifetimeId, legacyProId});
   }
 
+  static Future<void> debugDumpSubscriptionOffers() async {
+    await ensureReady();
+    if (!_available) {
+      if (kDebugMode) print('IAP unavailable');
+      return;
+    }
+
+    final res = await _iap.queryProductDetails({subscriptionId});
+    if (kDebugMode) {
+      print('notFoundIDs: ${res.notFoundIDs}');
+      print('productDetails count: ${res.productDetails.length}');
+    }
+
+    for (final d in res.productDetails) {
+      if (d.id != subscriptionId) continue;
+
+      if (d is! GooglePlayProductDetails) {
+        if (kDebugMode) print('Subscription is not GooglePlayProductDetails');
+        continue;
+      }
+
+      final offers = d.productDetails.subscriptionOfferDetails;
+      if (kDebugMode) {
+        print('subscriptionId: ${d.id}');
+        print('offers null? ${offers == null}');
+        print('offers len: ${offers?.length ?? 0}');
+      }
+
+      if (offers == null) return;
+
+      for (final o in offers) {
+        final basePlanId = (o as dynamic).basePlanId?.toString() ?? '';
+        final offerToken = (o as dynamic).offerIdToken?.toString() ?? '';
+        final phases = (o as dynamic).pricingPhases as List? ?? const [];
+
+        String firstPrice = '';
+        if (phases.isNotEmpty) {
+          final p0 = phases.first as dynamic;
+          firstPrice = p0.formattedPrice?.toString() ?? '';
+        }
+
+        if (kDebugMode) {
+          print(
+            'offer basePlanId=$basePlanId tokenEmpty=${offerToken.isEmpty} firstPrice=$firstPrice phases=${phases.length}',
+          );
+        }
+      }
+    }
+  }
+
   static Future<String> priceForLifetime() async {
     final res = await queryAll();
     for (final d in res.productDetails) {
@@ -174,32 +224,29 @@ class PurchaseService {
     if (res.productDetails.isEmpty) throw 'Subscription product details empty';
 
     GooglePlayProductDetails? match;
+    dynamic offerMatch;
 
     for (final d in res.productDetails) {
       if (d.id != subscriptionId) continue;
       if (d is! GooglePlayProductDetails) continue;
 
       final offers = d.productDetails.subscriptionOfferDetails;
-      final idx = d.subscriptionIndex;
-
       if (offers == null || offers.isEmpty) continue;
-      if (idx == null || idx < 0 || idx >= offers.length) continue;
 
-      if (offers[idx].basePlanId == basePlanId) {
-        match = d;
-        break;
+      for (final o in offers) {
+        if (o.basePlanId == basePlanId) {
+          match = d;
+          offerMatch = o;
+          break;
+        }
       }
+
+      if (match != null) break;
     }
 
-    if (match == null) throw 'No offer token for base plan: $basePlanId';
+    if (match == null || offerMatch == null) throw 'No offer token for base plan: $basePlanId';
 
-    final offers = match.productDetails.subscriptionOfferDetails;
-    final idx = match.subscriptionIndex;
-
-    if (offers == null || offers.isEmpty) throw 'No offer token for base plan: $basePlanId';
-    if (idx == null || idx < 0 || idx >= offers.length) throw 'No offer token for base plan: $basePlanId';
-
-    final token = offers[idx].offerIdToken;
+    final token = offerMatch.offerIdToken.toString();
     if (token.isEmpty) throw 'No offer token for base plan: $basePlanId';
 
     final param = GooglePlayPurchaseParam(productDetails: match, offerToken: token);
@@ -291,17 +338,7 @@ class PurchaseService {
           }
         }
 
-        if (!ignorePaid) {
-          if (isLegacyOrLifetime) {
-            _permanentPro = true;
-            await prefs.setBool(_kPermanentPro, true);
-          }
-
-          if (_permanentPro || isSub) {
-            _isPro = true;
-            await prefs.setBool(_kIsPro, true);
-          }
-        }
+        bool serverVerified = false;
 
         if (authToken.isNotEmpty && purchaseToken.isNotEmpty) {
           try {
@@ -314,8 +351,11 @@ class PurchaseService {
               body: jsonEncode({
                 'productId': p.productID,
                 'purchaseToken': purchaseToken,
+                'packageName': 'com.colourswift.avarionxvpn',
+                'basePlanId': isSub ? ((prefs.getString(_kLocalSubPlan) ?? prefs.getString(_kPendingSubPlan) ?? '')) : '',
               }),
             );
+
             if (kDebugMode) {
               print(res.statusCode);
               print(res.body);
@@ -331,12 +371,37 @@ class PurchaseService {
                 if (meRes.statusCode == 200) {
                   final meJson = jsonDecode(meRes.body) as Map<String, dynamic>;
                   final user = (meJson['user'] as Map?)?.cast<String, dynamic>();
+
                   final plan = (user?['plan'] ?? '').toString();
+                  final rawExp = user?['planExpiresAt'];
+
+                  final int? exp = rawExp is num
+                      ? rawExp.toInt()
+                      : int.tryParse((rawExp ?? '').toString());
+
                   await prefs.setString('billing_server_plan', plan);
+
+                  await PurchaseService.applyServerAccountEntitlement(
+                    signedIn: true,
+                    plan: plan,
+                    planExpiresAt: exp,
+                  );
                 }
               } catch (_) {}
             }
           } catch (_) {}
+        }
+
+        if (!ignorePaid) {
+          if (isLegacyOrLifetime) {
+            _permanentPro = true;
+            await prefs.setBool(_kPermanentPro, true);
+          }
+
+          if (serverVerified || _permanentPro) {
+            _isPro = true;
+            await prefs.setBool(_kIsPro, true);
+          }
         }
       }
 

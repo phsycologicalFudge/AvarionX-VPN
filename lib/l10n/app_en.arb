@@ -481,7 +481,7 @@
     }
   },
   "homeUpgrade": "Upgrade",
-  "homeFeatureSecureVpnTitle": "Secure VPN",
+  "homeFeatureSecureVpnTitle": "AvarionX Secure VPN",
   "homeFeatureSecureVpnDesc": "Hide your IP and block unwanted content",
   "proActivated": "PRO activated",
   "proDeactivated": "PRO deactivated",
@@ -640,7 +640,7 @@
   "vpnSettingsAdTrackerProtectionTitle": "Optional ad and tracker protection",
   "vpnSettingsAdTrackerProtectionBody": "Enable additional blocking for ads and trackers in the Customisation tab.",
   "vpnSettingsBrandFooter": "Secured by VX-Link",
-  "vpnSettingsAccountTitle": "Account",
+  "vpnSettingsAccountTitle": "My Account",
   "vpnSettingsSignInToContinue": "Sign in to continue",
   "vpnSettingsAccountSyncBody": "Your plan and data usage sync to your account.",
   "vpnSettingsSignedIn": "Signed in",

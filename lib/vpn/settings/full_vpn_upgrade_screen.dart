@@ -88,6 +88,8 @@ class _FullVpnUpgradeScreenState extends State<FullVpnUpgradeScreen> {
   Future<void> _loadPrices() async {
     try {
       await PurchaseService.ensureReady();
+      await PurchaseService.debugDumpSubscriptionOffers();
+      await PurchaseService.debugDumpSubscriptionOffers();
 
       final monthlyInfo = await PurchaseService.priceInfoForBasePlan(
         PurchaseService.basePlanMonthly,
