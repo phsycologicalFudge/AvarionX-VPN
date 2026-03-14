@@ -22,6 +22,19 @@ Available on Google Play and GitHub.
 
 </div>
 
+## Screenshots
+
+<div align="center">
+  <img src="https://raw.githubusercontent.com/phsycologicalFudge/AvarionX-VPN/main/assets/gitImages/1.jpg" width="220">
+  <img src="https://raw.githubusercontent.com/phsycologicalFudge/AvarionX-VPN/main/assets/gitImages/2.jpg" width="220">
+  <img src="https://raw.githubusercontent.com/phsycologicalFudge/AvarionX-VPN/main/assets/gitImages/3.jpg" width="220">
+  <img src="https://raw.githubusercontent.com/phsycologicalFudge/AvarionX-VPN/main/assets/gitImages/4.jpg" width="220">
+  <img src="https://raw.githubusercontent.com/phsycologicalFudge/AvarionX-VPN/main/assets/gitImages/5.jpg" width="220">
+  <img src="https://raw.githubusercontent.com/phsycologicalFudge/AvarionX-VPN/main/assets/gitImages/6.jpg" width="220">
+  <img src="https://raw.githubusercontent.com/phsycologicalFudge/AvarionX-VPN/main/assets/gitImages/7.jpg" width="220">
+
+</div>
+
 ## Overview
 
 AvarionX Secure VPN allows Android devices to connect to secure VPN servers using modern encrypted protocols.
@@ -87,19 +100,6 @@ These projects remain the property of their respective authors.
 Get the latest APK from GitHub Releases:
 
 https://github.com/phsycologicalFudge/AvarionX-VPN/releases
-
-## Screenshots
-
-<div align="center">
-  <img src="https://raw.githubusercontent.com/phsycologicalFudge/AvarionX-VPN/main/assets/gitImages/1.jpg" width="220">
-  <img src="https://raw.githubusercontent.com/phsycologicalFudge/AvarionX-VPN/main/assets/gitImages/2.jpg" width="220">
-  <img src="https://raw.githubusercontent.com/phsycologicalFudge/AvarionX-VPN/main/assets/gitImages/3.jpg" width="220">
-  <img src="https://raw.githubusercontent.com/phsycologicalFudge/AvarionX-VPN/main/assets/gitImages/4.jpg" width="220">
-  <img src="https://raw.githubusercontent.com/phsycologicalFudge/AvarionX-VPN/main/assets/gitImages/5.jpg" width="220">
-  <img src="https://raw.githubusercontent.com/phsycologicalFudge/AvarionX-VPN/main/assets/gitImages/6.jpg" width="220">
-  <img src="https://raw.githubusercontent.com/phsycologicalFudge/AvarionX-VPN/main/assets/gitImages/7.jpg" width="220">
-
-</div>
 
 ## Privacy
 
