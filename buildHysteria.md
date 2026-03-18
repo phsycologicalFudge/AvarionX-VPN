@@ -44,8 +44,8 @@ if not env.get("CC"):
 $env:HY_APP_PLATFORMS = "android/arm64"
 $env:CGO_ENABLED = "1"
 $env:CGO_LDFLAGS = "-Wl,-z,max-page-size=16384"
-$env:CC = "C:\Users\Administrator\AppData\Local\Android\Sdk\ndk\27.0.12077973\toolchains\llvm\prebuilt\windows-x86_64\bin\aarch64-linux-android21-clang.cmd"
-$env:CXX = "C:\Users\Administrator\AppData\Local\Android\Sdk\ndk\27.0.12077973\toolchains\llvm\prebuilt\windows-x86_64\bin\aarch64-linux-android21-clang++.cmd"
+$env:CC = "$env:ANDROID_NDK_HOME\toolchains\llvm\prebuilt\windows-x86_64\bin\aarch64-linux-android21-clang.cmd"
+$env:CXX = "$env:ANDROID_NDK_HOME\toolchains\llvm\prebuilt\windows-x86_64\bin\aarch64-linux-android21-clang++.cmd"
 
 python .\hyperbole.py build -r
 ```
@@ -56,8 +56,8 @@ python .\hyperbole.py build -r
 $env:HY_APP_PLATFORMS = "android/armv7"
 $env:CGO_ENABLED = "1"
 $env:CGO_LDFLAGS = "-Wl,-z,max-page-size=16384"
-$env:CC = "C:\Users\Administrator\AppData\Local\Android\Sdk\ndk\27.0.12077973\toolchains\llvm\prebuilt\windows-x86_64\bin\armv7a-linux-androideabi21-clang.cmd"
-$env:CXX = "C:\Users\Administrator\AppData\Local\Android\Sdk\ndk\27.0.12077973\toolchains\llvm\prebuilt\windows-x86_64\bin\armv7a-linux-androideabi21-clang++.cmd"
+$env:CC = "$env:ANDROID_NDK_HOME\toolchains\llvm\prebuilt\windows-x86_64\bin\armv7a-linux-androideabi21-clang.cmd"
+$env:CXX = "$env:ANDROID_NDK_HOME\toolchains\llvm\prebuilt\windows-x86_64\bin\armv7a-linux-androideabi21-clang++.cmd"
 
 python .\hyperbole.py build -r
 ```
