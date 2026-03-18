@@ -1,5 +1,3 @@
-## buildHysteria.md
-
 This project uses a custom-built version of Hysteria for Android. The binaries are rebuilt with specific linker flags to satisfy Google Play’s 16 KB page-size requirement.
 
 This guide explains how to reproduce the exact binaries used.
