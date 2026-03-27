@@ -108,15 +108,29 @@ The VPN client is designed with a minimal data collection philosophy.
 - Strict *No Activity Logs* policy. Encrypted traffic content is never inspected or logged.
 - No ads, analytics, or tracking libraries are included in the application.
 
-## The Backend
+## The architecture
 
 ### Colourswift Core
 
 Authentication, account policy enforcement etc, are handled by ColourSwift Core, which runs on Cloudflare infrastructure. 
 
+#### How does it work?
+The client generates a device identifier, this is a random value for anonymous users or an account-linked identifier when signed in.
+
+When connecting, the client sends this identifier to ColourSwift Core to request connection details for a selected region.
+The backend responds with temporary session data and server configuration. 
+
+The client then establishes a direct connection to the VPN server using this information.
+
+ColourSwift Core is responsible for authentication and server assignment. It does not proxy, inspect, or handle user traffic.
+
 ### CoreDNS
 
 DNS services are handled by a DNS worker on Cloudflare, controlled by Colourswift Core.
+
+#### How does it work?
+In full VPN mode, DNS requests are handled by the VPN server.
+In DNS-only mode, the client communicates directly with the DNS service over HTTPS. Requests are processed by a Cloudflare Worker and filtered based on the user’s plan and settings.
 
 ## My Promise
 
