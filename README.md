@@ -108,7 +108,16 @@ The VPN client is designed with a minimal data collection philosophy.
 - Strict *No Activity Logs* policy. Encrypted traffic content is never inspected or logged.
 - No ads, analytics, or tracking libraries are included in the application.
 
-Authentication and account policy enforcement are handled by *ColourSwift Auth Cloud*, which runs on Cloudflare infrastructure.  
-This service is responsible for authentication, device authorization, and policy enforcement for VPN connections.
+## The Backend
 
-The system is designed to follow modern data minimization practices while maintaining the *No Activity Logs* policy. Certain networking components and backend infrastructure are maintained separately.
+### Colourswift Core
+
+Authentication, account policy enforcement etc, are handled by ColourSwift Core, which runs on Cloudflare infrastructure. 
+
+### CoreDNS
+
+DNS services are handled by a DNS worker on Cloudflare, controlled by Colourswift Core.
+
+## My Promise
+
+The system is designed to follow modern data minimization practices while maintaining the *No Activity Logs* policy.
