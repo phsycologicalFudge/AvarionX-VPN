@@ -22,6 +22,19 @@ Available on Google Play and GitHub.
 
 </div>
 
+## Screenshots
+
+<div align="center">
+  <img src="https://raw.githubusercontent.com/phsycologicalFudge/AvarionX-VPN/main/assets/gitImages/1.jpg" width="220">
+  <img src="https://raw.githubusercontent.com/phsycologicalFudge/AvarionX-VPN/main/assets/gitImages/2.jpg" width="220">
+  <img src="https://raw.githubusercontent.com/phsycologicalFudge/AvarionX-VPN/main/assets/gitImages/3.jpg" width="220">
+  <img src="https://raw.githubusercontent.com/phsycologicalFudge/AvarionX-VPN/main/assets/gitImages/4.jpg" width="220">
+  <img src="https://raw.githubusercontent.com/phsycologicalFudge/AvarionX-VPN/main/assets/gitImages/5.jpg" width="220">
+  <img src="https://raw.githubusercontent.com/phsycologicalFudge/AvarionX-VPN/main/assets/gitImages/6.jpg" width="220">
+  <img src="https://raw.githubusercontent.com/phsycologicalFudge/AvarionX-VPN/main/assets/gitImages/7.jpg" width="220">
+
+</div>
+
 ## Overview
 
 AvarionX Secure VPN allows Android devices to connect to secure VPN servers using modern encrypted protocols.
@@ -88,19 +101,6 @@ Get the latest APK from GitHub Releases:
 
 https://github.com/phsycologicalFudge/AvarionX-VPN/releases
 
-## Screenshots
-
-<div align="center">
-  <img src="https://raw.githubusercontent.com/phsycologicalFudge/AvarionX-VPN/main/assets/gitImages/1.jpg" width="220">
-  <img src="https://raw.githubusercontent.com/phsycologicalFudge/AvarionX-VPN/main/assets/gitImages/2.jpg" width="220">
-  <img src="https://raw.githubusercontent.com/phsycologicalFudge/AvarionX-VPN/main/assets/gitImages/3.jpg" width="220">
-  <img src="https://raw.githubusercontent.com/phsycologicalFudge/AvarionX-VPN/main/assets/gitImages/4.jpg" width="220">
-  <img src="https://raw.githubusercontent.com/phsycologicalFudge/AvarionX-VPN/main/assets/gitImages/5.jpg" width="220">
-  <img src="https://raw.githubusercontent.com/phsycologicalFudge/AvarionX-VPN/main/assets/gitImages/6.jpg" width="220">
-  <img src="https://raw.githubusercontent.com/phsycologicalFudge/AvarionX-VPN/main/assets/gitImages/7.jpg" width="220">
-
-</div>
-
 ## Privacy
 
 The VPN client is designed with a minimal data collection philosophy.
@@ -108,7 +108,30 @@ The VPN client is designed with a minimal data collection philosophy.
 - Strict *No Activity Logs* policy. Encrypted traffic content is never inspected or logged.
 - No ads, analytics, or tracking libraries are included in the application.
 
-Authentication and account policy enforcement are handled by *ColourSwift Auth Cloud*, which runs on Cloudflare infrastructure.  
-This service is responsible for authentication, device authorization, and policy enforcement for VPN connections.
+## The architecture
 
-The system is designed to follow modern data minimization practices while maintaining the *No Activity Logs* policy. Certain networking components and backend infrastructure are maintained separately.
+### Colourswift Core
+
+Authentication, account policy enforcement etc, are handled by ColourSwift Core, which runs on Cloudflare infrastructure. 
+
+#### How does it work?
+The client generates a device identifier, this is a random value for anonymous users or an account-linked identifier when signed in.
+
+When connecting, the client sends this identifier to ColourSwift Core to request connection details for a selected region.
+The backend responds with temporary session data and server configuration. 
+
+The client then establishes a direct connection to the VPN server using this information.
+
+ColourSwift Core is responsible for authentication and server assignment. It does not proxy, inspect, or handle user traffic.
+
+### CoreDNS
+
+DNS services are handled by a DNS worker on Cloudflare, controlled by Colourswift Core.
+
+#### How does it work?
+In full VPN mode, DNS requests are handled by the VPN server.
+In DNS-only mode, the client communicates directly with the DNS service over HTTPS. Requests are processed by a Cloudflare Worker and filtered based on the user’s plan and settings.
+
+## My Promise
+
+The system is designed to follow modern data minimization practices while maintaining the *No Activity Logs* policy.
