@@ -500,7 +500,7 @@
   "vpnCancel": "Cancelar",
   "vpnSignIn": "Iniciar sesión",
   "vpnUsageLoading": "Cargando uso...",
-  "vpnUsageNoLimits": "Sin límites de datos",
+  "vpnUsageNoLimits": "Unlimited usage",
   "vpnUsageSyncing": "Sincronizando",
   "vpnUsageUsedThisMonth": "{used} usados este mes",
   "vpnUsageDataTitle": "Uso de datos",

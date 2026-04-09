@@ -464,7 +464,7 @@ class _FullVpnLocationMapCardState extends State<FullVpnLocationMapCard>
       _captureSnapshotForABit(msVisible: 2400);
     }
 
-    if (latChanged || lonChanged || connChanged || connectingChanged || parentSelectedChanged) {
+    if (latChanged || lonChanged || parentSelectedChanged) {
       _queueFocus(force: parentSelectedChanged);
     }
   }
@@ -607,8 +607,7 @@ class _FullVpnLocationMapCardState extends State<FullVpnLocationMapCard>
                     initialZoom: _clampZoom(_focusZoom()),
                     minZoom: _minZoom,
                     maxZoom: _maxZoom,
-                    backgroundColor: Colors.black,
-                    cameraConstraint: CameraConstraint.contain(bounds: _worldBounds),
+                    backgroundColor: const Color(0xFF111315),                    cameraConstraint: CameraConstraint.contain(bounds: _worldBounds),
                     interactionOptions: const InteractionOptions(
                       flags: InteractiveFlag.drag |
                       InteractiveFlag.pinchZoom |
@@ -633,14 +632,14 @@ class _FullVpnLocationMapCardState extends State<FullVpnLocationMapCard>
                   ),
                   children: [
                     TileLayer(
-                      urlTemplate:
-                      'https://{s}.basemaps.cartocdn.com/dark_nolabels/{z}/{x}/{y}{r}.png',
+                      urlTemplate: 'https://{s}.basemaps.cartocdn.com/dark_nolabels/{z}/{x}/{y}{r}.png',
                       subdomains: const ['a', 'b', 'c', 'd'],
                       userAgentPackageName: 'com.colourswift.avarionxvpn',
                       maxZoom: _maxZoom,
                       maxNativeZoom: 6,
                       keepBuffer: 6,
                       tileProvider: tileProvider,
+                      tileDisplay: const TileDisplay.instantaneous(),
                     ),
                     if (showRoute)AnimatedConnectingRouteLayer(from: _ipCenter(), to: sel!.point, animate: widget.isConnecting,),
                     if (markers.isNotEmpty) MarkerLayer(markers: markers),

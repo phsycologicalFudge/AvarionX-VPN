@@ -1,5 +1,5 @@
 import 'package:colourswift_av/services/themes/theme_manager.dart';
-import 'package:colourswift_av/vpn/full_vpn_mode_screen.dart';
+import 'package:colourswift_av/vpn/screens/mainScreen.dart';
 import 'package:colourswift_av/vpn/vpn_permission_intro_screen.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';

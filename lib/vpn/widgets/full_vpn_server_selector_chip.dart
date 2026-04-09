@@ -22,8 +22,7 @@ class FullVpnServerSelectorChip extends StatelessWidget {
     for (final s in servers) {
       if (s.id == selectedServerId) return s;
     }
-    if (servers.isEmpty) return null;
-    return servers.first;
+    return null;
   }
 
   Color _modeBg() {

@@ -167,15 +167,16 @@ class PurchaseService {
     final offers = details.productDetails.subscriptionOfferDetails;
     if (offers == null || offers.isEmpty) return '';
 
-    final idx = details.subscriptionIndex;
-    if (idx == null || idx < 0 || idx >= offers.length) return '';
+    for (final offer in offers) {
+      if (offer.basePlanId != basePlanId) continue;
 
-    final offer = offers[idx];
-    if (offer.basePlanId != basePlanId) return '';
+      final phases = offer.pricingPhases;
+      if (phases.isEmpty) return '';
 
-    final phases = offer.pricingPhases;
-    if (phases.isEmpty) return '';
-    return phases.first.formattedPrice;
+      return phases.last.formattedPrice;
+    }
+
+    return '';
   }
 
   static Future<void> buyLegacyLifetime() async {
@@ -473,26 +474,38 @@ class PurchaseService {
 
   static Future<PlanPriceInfo?> priceInfoForBasePlan(String basePlanId) async {
     final res = await queryAll();
+    return priceInfoForBasePlanFromResponse(res, basePlanId);
+  }
 
+  static PlanPriceInfo? priceInfoForBasePlanFromResponse(
+      ProductDetailsResponse res,
+      String basePlanId,
+      ) {
     for (final d in res.productDetails) {
       if (d.id != subscriptionId) continue;
       if (d is! GooglePlayProductDetails) continue;
 
       final offers = d.productDetails.subscriptionOfferDetails;
-      final idx = d.subscriptionIndex;
-
       if (offers == null || offers.isEmpty) continue;
-      if (idx == null || idx < 0 || idx >= offers.length) continue;
 
-      if (offers[idx].basePlanId == basePlanId) {
-        final phases = offers[idx].pricingPhases;
+      for (final offer in offers) {
+        if (offer.basePlanId != basePlanId) continue;
+
+        final phases = offer.pricingPhases;
         if (phases.isEmpty) continue;
 
-        final phase = phases.first;
+        bool hasFreeTrial = false;
+        if (phases.length > 1 && phases.first.priceAmountMicros == 0) {
+          hasFreeTrial = true;
+        }
+
+        final phase = phases.last;
+
         return PlanPriceInfo(
           formattedPrice: phase.formattedPrice,
           priceMicros: phase.priceAmountMicros,
           currencyCode: phase.priceCurrencyCode,
+          hasFreeTrial: hasFreeTrial,
         );
       }
     }
@@ -505,11 +518,13 @@ class PlanPriceInfo {
   final String formattedPrice;
   final int priceMicros;
   final String currencyCode;
+  final bool hasFreeTrial;
 
   PlanPriceInfo({
     required this.formattedPrice,
     required this.priceMicros,
     required this.currencyCode,
+    required this.hasFreeTrial,
   });
 
   double get price => priceMicros / 1000000.0;

@@ -2191,7 +2191,7 @@ abstract class AppLocalizations {
   /// No description provided for @vpnUsageNoLimits.
   ///
   /// In en, this message translates to:
-  /// **'No data limits'**
+  /// **'Unlimited usage'**
   String get vpnUsageNoLimits;
 
   /// No description provided for @vpnUsageSyncing.

@@ -239,6 +239,7 @@ extension _FullVpnControllerNetwork on FullVpnController {
       final headers = <String, String>{
         "content-type": "application/json; charset=utf-8",
       };
+
       if (_token.isNotEmpty) {
         headers["authorization"] = "Bearer $_token";
       }
@@ -262,10 +263,22 @@ extension _FullVpnControllerNetwork on FullVpnController {
         body: jsonEncode(body),
       )
           .timeout(const Duration(seconds: 8));
-      _net("POST $apiBase/vpn/provision status=${res.statusCode} bodyLen=${res.body.length}");
+
+      final rawBody = res.body;
+      final bodyText = rawBody.trim();
+
+      print("=== VPN PROVISION RESPONSE BEGIN ===");
+      print("status=${res.statusCode}");
+      print("rawBody=$rawBody");
+      print("bodyText=$bodyText");
+      print("=== VPN PROVISION RESPONSE END ===");
+
+      _net("POST $apiBase/vpn/provision status=${res.statusCode}");
+      _net("POST $apiBase/vpn/provision rawBody=$rawBody");
+      _net("POST $apiBase/vpn/provision bodyText=$bodyText");
 
       if (res.statusCode == 200) {
-        final j = jsonDecode(res.body) as Map<String, dynamic>;
+        final j = jsonDecode(rawBody) as Map<String, dynamic>;
         return (j["peer"] as Map?)?.cast<String, dynamic>();
       }
 
@@ -284,7 +297,6 @@ extension _FullVpnControllerNetwork on FullVpnController {
         return null;
       }
 
-      final bodyText = res.body.trim();
       _status = bodyText.isEmpty
           ? "Provision failed (${res.statusCode})."
           : "Provision failed (${res.statusCode}): $bodyText";

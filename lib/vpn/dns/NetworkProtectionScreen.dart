@@ -58,8 +58,8 @@ class _NetworkAdvancedScreenState extends State<NetworkProtectionScreen> with Wi
     UpstreamPreset(key: 'custom', title: 'Custom', subtitle: 'Enter your own resolver', ip: ''),
   ];
 
-  bool get canUseAdsBlocklists => !kEnableAds || isPro;
-  bool get canUseCsAds => !kEnableAds || isPro;
+  bool get canUseAdsBlocklists => true;
+  bool get canUseCsAds => true;
 
   bool proBusy = false;
   bool isPro = false;
@@ -642,21 +642,6 @@ class _NetworkAdvancedScreenState extends State<NetworkProtectionScreen> with Wi
       );
     }
 
-    Widget proTag() {
-      final l10n = AppLocalizations.of(context)!;
-      return Container(
-        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-        decoration: BoxDecoration(
-          color: Colors.white10,
-          borderRadius: BorderRadius.circular(999),
-        ),
-        child: Text(
-          l10n.proBadge,
-          style: text.labelSmall?.copyWith(fontWeight: FontWeight.w900),
-        ),
-      );
-    }
-
     final l10n = AppLocalizations.of(context)!;
 
     return _pagePadding(
@@ -681,12 +666,7 @@ class _NetworkAdvancedScreenState extends State<NetworkProtectionScreen> with Wi
                     contentPadding: EdgeInsets.zero,
                     value: recCsAds,
                     onChanged: canUseCsAds ? (v) async => toggleRecCsAds(v) : null,
-                    title: Row(
-                      children: [
-                        Expanded(child: Text(l10n.networkBlocklistsCsAdsTitle)),
-                        if (kEnableAds) proTag(),
-                      ],
-                    ),
+                    title: Text(l10n.networkBlocklistsCsAdsTitle),
                     subtitle: Text(l10n.networkBlocklistsSeeGithub),
                   ),
                 ),
@@ -713,12 +693,7 @@ class _NetworkAdvancedScreenState extends State<NetworkProtectionScreen> with Wi
                 contentPadding: EdgeInsets.zero,
                 value: listAds,
                 onChanged: proUnlocked ? (v) async => toggleAds(v) : null,
-                title: Row(
-                  children: [
-                    Expanded(child: Text(l10n.networkBlocklistsAdsTitle)),
-                    proTag(),
-                  ],
-                ),
+                title: Text(l10n.networkBlocklistsAdsTitle),
                 subtitle: Text(l10n.networkBlocklistsAdsSources),
               ),
             ),

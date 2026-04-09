@@ -63,4 +63,10 @@ const List<FullVpnServerLocation> kFullVpnServers = [
     countryCode: "PL",
     point: LatLng(52.2297, 21.0122),
   ),
+  FullVpnServerLocation(
+    id: "es-es",
+    label: "Spain",
+    countryCode: "ES",
+    point: LatLng(40.4168, -3.7038),
+  ),
 ];

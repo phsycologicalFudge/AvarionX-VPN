@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:url_launcher/url_launcher.dart';
 import '../translations/app_localizations.dart';
-import 'full_vpn_mode_screen.dart';
+import 'screens/mainScreen.dart';
 import 'package:flutter/services.dart';
 
 class VpnPermissionIntroScreen extends StatefulWidget {

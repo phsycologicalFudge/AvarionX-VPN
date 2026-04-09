@@ -1176,7 +1176,7 @@ class AppLocalizationsEs extends AppLocalizations {
   String get vpnUsageLoading => 'Cargando uso...';
 
   @override
-  String get vpnUsageNoLimits => 'Sin límites de datos';
+  String get vpnUsageNoLimits => 'Unlimited usage';
 
   @override
   String get vpnUsageSyncing => 'Sincronizando';

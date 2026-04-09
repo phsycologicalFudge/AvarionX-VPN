@@ -23,7 +23,6 @@ class _FullVpnUpgradeScreenState extends State<FullVpnUpgradeScreen> {
 
   bool _isPro = false;
   VpnProPlanType? _currentPlanType;
-  String _currentStatusLabel = 'Free';
 
   @override
   void initState() {
@@ -77,25 +76,22 @@ class _FullVpnUpgradeScreenState extends State<FullVpnUpgradeScreen> {
     setState(() {
       _isPro = isPro;
       _currentPlanType = isPro ? planType : null;
-      _currentStatusLabel = isPro
-          ? (planType == null
-          ? 'Pro'
-          : (planType == VpnProPlanType.yearly ? 'Yearly' : 'Monthly'))
-          : 'Free';
     });
   }
 
   Future<void> _loadPrices() async {
     try {
       await PurchaseService.ensureReady();
-      await PurchaseService.debugDumpSubscriptionOffers();
-      await PurchaseService.debugDumpSubscriptionOffers();
 
-      final monthlyInfo = await PurchaseService.priceInfoForBasePlan(
+      final res = await PurchaseService.queryAll();
+
+      final monthlyInfo = PurchaseService.priceInfoForBasePlanFromResponse(
+        res,
         PurchaseService.basePlanMonthly,
       );
 
-      final yearlyInfo = await PurchaseService.priceInfoForBasePlan(
+      final yearlyInfo = PurchaseService.priceInfoForBasePlanFromResponse(
+        res,
         PurchaseService.basePlanYearly,
       );
 
@@ -110,24 +106,6 @@ class _FullVpnUpgradeScreenState extends State<FullVpnUpgradeScreen> {
       setState(() {
         _loading = false;
       });
-    }
-  }
-
-  String _titleFor(VpnProPlanType p, AppLocalizations l10n) {
-    switch (p) {
-      case VpnProPlanType.monthly:
-        return l10n.settingsMonthly;
-      case VpnProPlanType.yearly:
-        return l10n.settingsYearly;
-    }
-  }
-
-  String _ctaLabel(VpnProPlanType p, AppLocalizations l10n) {
-    switch (p) {
-      case VpnProPlanType.monthly:
-        return l10n.settingsSubscribeMonthly;
-      case VpnProPlanType.yearly:
-        return l10n.settingsSubscribeYearly;
     }
   }
 
@@ -224,569 +202,364 @@ class _FullVpnUpgradeScreenState extends State<FullVpnUpgradeScreen> {
     }
   }
 
-  void _openPlanPicker() {
-    showModalBottomSheet(
-      context: context,
-      backgroundColor: Colors.transparent,
-      useSafeArea: true,
-      isScrollControlled: true,
-      builder: (ctx) {
-        final theme = Theme.of(ctx);
-        final scheme = theme.colorScheme;
-        final l10n = AppLocalizations.of(ctx)!;
-
-        Widget option(VpnProPlanType p, {String? badge, String? subtitle}) {
-          final selected = _selected == p;
-          final isCurrent = _isPro && _currentPlanType != null && _currentPlanType == p;
-
-          return Container(
-            margin: const EdgeInsets.only(bottom: 10),
-            decoration: BoxDecoration(
-              color: scheme.surface.withOpacity(0.25),
-              borderRadius: BorderRadius.circular(16),
-              border: Border.all(
-                color: selected
-                    ? scheme.primary.withOpacity(0.75)
-                    : scheme.outlineVariant.withOpacity(0.25),
-              ),
-            ),
-            child: ListTile(
-              enabled: !isCurrent,
-              onTap: isCurrent
-                  ? null
-                  : () {
-                Navigator.pop(ctx);
-                setState(() => _selected = p);
-              },
-              contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 4),
-              title: Row(
-                children: [
-                  Expanded(
-                    child: Text(
-                      _titleFor(p, l10n),
-                      style: theme.textTheme.bodyLarge?.copyWith(
-                        fontWeight: FontWeight.w800,
-                        color: isCurrent
-                            ? scheme.onSurface.withOpacity(0.6)
-                            : scheme.onSurface,
-                      ),
-                    ),
-                  ),
-                  if (badge != null && !isCurrent)
-                    Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 5),
-                      decoration: BoxDecoration(
-                        color: scheme.primary.withOpacity(0.14),
-                        borderRadius: BorderRadius.circular(999),
-                        border: Border.all(
-                          color: scheme.primary.withOpacity(0.25),
-                        ),
-                      ),
-                      child: Text(
-                        badge,
-                        style: theme.textTheme.labelSmall?.copyWith(
-                          fontWeight: FontWeight.w800,
-                          color: scheme.primary,
-                        ),
-                      ),
-                    ),
-                  if (isCurrent) ...[
-                    Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 5),
-                      decoration: BoxDecoration(
-                        color: scheme.surface.withOpacity(0.35),
-                        borderRadius: BorderRadius.circular(999),
-                        border: Border.all(
-                          color: scheme.outlineVariant.withOpacity(0.25),
-                        ),
-                      ),
-                      child: Text(
-                        'Current',
-                        style: theme.textTheme.labelSmall?.copyWith(
-                          fontWeight: FontWeight.w800,
-                          color: scheme.onSurfaceVariant,
-                        ),
-                      ),
-                    ),
-                  ],
-                  const SizedBox(width: 8),
-                  if (selected) Icon(Icons.check_rounded, color: scheme.primary),
-                ],
-              ),
-              subtitle: subtitle == null
-                  ? null
-                  : Padding(
-                padding: const EdgeInsets.only(top: 4),
-                child: Text(
-                  subtitle,
-                  style: theme.textTheme.bodySmall?.copyWith(
-                    color: scheme.onSurfaceVariant,
-                    fontWeight: FontWeight.w600,
-                  ),
-                ),
-              ),
-            ),
-          );
-        }
-
-        final yearlySubtitle = _yearlyInfo?.formattedPrice ?? '';
-        final monthlySubtitle = _monthlyInfo?.formattedPrice ?? '';
-
-        return Padding(
-          padding: EdgeInsets.only(
-            left: 14,
-            right: 14,
-            top: 10,
-            bottom: MediaQuery.of(ctx).viewInsets.bottom + 14,
-          ),
-          child: Material(
-            color: scheme.surfaceContainerHighest,
-            borderRadius: BorderRadius.circular(22),
-            clipBehavior: Clip.antiAlias,
-            child: Padding(
-              padding: const EdgeInsets.fromLTRB(16, 16, 16, 16),
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Row(
-                    children: [
-                      Expanded(
-                        child: Text(
-                          l10n.settingsSwitchPlan,
-                          style: theme.textTheme.titleMedium?.copyWith(
-                            fontWeight: FontWeight.w800,
-                          ),
-                        ),
-                      ),
-                      IconButton(
-                        onPressed: () => Navigator.pop(ctx),
-                        icon: const Icon(Icons.close_rounded),
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 6),
-                  option(
-                    VpnProPlanType.yearly,
-                    badge: l10n.settingsBestValue,
-                    subtitle: yearlySubtitle.isEmpty ? null : yearlySubtitle,
-                  ),
-                  option(
-                    VpnProPlanType.monthly,
-                    subtitle: monthlySubtitle.isEmpty ? null : monthlySubtitle,
-                  ),
-                ],
-              ),
-            ),
-          ),
-        );
-      },
-    );
-  }
-
-  Widget _lineItem(BuildContext context, String title, String body) {
+  Widget _buildFeatureRow(BuildContext context, String title, String subtitle) {
     final theme = Theme.of(context);
-    final scheme = theme.colorScheme;
-
     return Padding(
-      padding: const EdgeInsets.only(bottom: 12),
+      padding: const EdgeInsets.symmetric(vertical: 12),
       child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
+        crossAxisAlignment: CrossAxisAlignment.center,
         children: [
-          Container(
-            width: 6,
-            height: 6,
-            margin: const EdgeInsets.only(top: 7),
-            decoration: BoxDecoration(
-              color: scheme.primary.withOpacity(0.9),
-              shape: BoxShape.circle,
-            ),
-          ),
-          const SizedBox(width: 10),
           Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(
                   title,
-                  style: theme.textTheme.bodyMedium?.copyWith(
-                    fontWeight: FontWeight.w900,
-                    color: scheme.onSurface,
+                  style: theme.textTheme.titleMedium?.copyWith(
+                    fontWeight: FontWeight.w800,
+                    color: Colors.white,
                   ),
                 ),
-                const SizedBox(height: 2),
+                const SizedBox(height: 4),
                 Text(
-                  body,
-                  style: theme.textTheme.bodySmall?.copyWith(
-                    color: scheme.onSurfaceVariant,
-                    height: 1.35,
-                    fontWeight: FontWeight.w600,
+                  subtitle,
+                  style: theme.textTheme.bodyMedium?.copyWith(
+                    color: Colors.white70,
+                    height: 1.3,
                   ),
                 ),
               ],
             ),
+          ),
+          const SizedBox(width: 16),
+          const Icon(
+            Icons.check_circle_outline_rounded,
+            color: Colors.white54,
+            size: 28,
           ),
         ],
       ),
     );
   }
 
-  Widget _sectionBox(BuildContext context, {required Widget child}) {
-    final scheme = Theme.of(context).colorScheme;
+  Widget _buildPlanCard({
+    required BuildContext context,
+    required VpnProPlanType type,
+    required String title,
+    required String priceStr,
+    required String subtitleStr,
+    String? discountBadge,
+    String? crossedOutPrice,
+  }) {
+    final theme = Theme.of(context);
+    final isSelected = _selected == type;
+    final isCurrent = _isPro && _currentPlanType == type;
 
-    return Container(
-      width: double.infinity,
-      decoration: BoxDecoration(
-        color: scheme.surfaceContainerHighest.withOpacity(0.72),
-        borderRadius: BorderRadius.circular(18),
-        border: Border.all(
-          color: scheme.outlineVariant.withOpacity(0.25),
+    return Expanded(
+      child: GestureDetector(
+        onTap: isCurrent ? null : () => setState(() => _selected = type),
+        child: AnimatedContainer(
+          duration: const Duration(milliseconds: 200),
+          padding: const EdgeInsets.all(16),
+          decoration: BoxDecoration(
+            color: isSelected
+                ? Colors.white.withOpacity(0.1)
+                : Colors.white.withOpacity(0.03),
+            borderRadius: BorderRadius.circular(16),
+            border: Border.all(
+              color: isSelected
+                  ? Colors.blueAccent.withOpacity(0.8)
+                  : Colors.white.withOpacity(0.1),
+              width: isSelected ? 2 : 1,
+            ),
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  Text(
+                    title,
+                    style: theme.textTheme.titleSmall?.copyWith(
+                      color: Colors.white,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                  if (isSelected)
+                    const Icon(Icons.check_circle, color: Colors.blueAccent, size: 18)
+                  else if (isCurrent)
+                    Text("Current", style: theme.textTheme.labelSmall?.copyWith(color: Colors.grey))
+                  else if (discountBadge != null)
+                      Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                        decoration: BoxDecoration(
+                          color: Colors.white,
+                          borderRadius: BorderRadius.circular(4),
+                        ),
+                        child: Text(
+                          discountBadge,
+                          style: theme.textTheme.labelSmall?.copyWith(
+                            color: Colors.black,
+                            fontWeight: FontWeight.w900,
+                          ),
+                        ),
+                      ),
+                ],
+              ),
+              const SizedBox(height: 12),
+              if (crossedOutPrice != null)
+                Text(
+                  crossedOutPrice,
+                  style: theme.textTheme.bodySmall?.copyWith(
+                    color: Colors.white54,
+                    decoration: TextDecoration.lineThrough,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              Text(
+                priceStr,
+                style: theme.textTheme.headlineSmall?.copyWith(
+                  color: Colors.white,
+                  fontWeight: FontWeight.w900,
+                ),
+              ),
+              const SizedBox(height: 4),
+              Text(
+                subtitleStr,
+                style: theme.textTheme.bodySmall?.copyWith(
+                  color: Colors.white60,
+                  height: 1.2,
+                ),
+              ),
+            ],
+          ),
         ),
-      ),
-      child: Padding(
-        padding: const EdgeInsets.fromLTRB(14, 14, 14, 14),
-        child: child,
       ),
     );
   }
 
   @override
   Widget build(BuildContext context) {
-    final l10n = AppLocalizations.of(context)!;
     final theme = Theme.of(context);
-    final scheme = theme.colorScheme;
-
-    final monthly = _monthlyInfo;
-    final yearly = _yearlyInfo;
-    final hasPrices = monthly != null && yearly != null;
 
     double? yearlyPerMonth;
     int? savePercent;
+    bool hasTrialForSelected = false;
 
-    if (hasPrices) {
-      yearlyPerMonth = yearly!.price / 12.0;
-      final ratio = yearlyPerMonth / monthly!.price;
-      savePercent = ((1.0 - ratio) * 100.0).round();
-      if (savePercent < 0) savePercent = 0;
-      if (savePercent > 95) savePercent = 95;
+    if (_monthlyInfo != null && _yearlyInfo != null) {
+      yearlyPerMonth = _yearlyInfo!.price / 12.0;
+      final ratio = yearlyPerMonth / _monthlyInfo!.price;
+      savePercent = ((1.0 - ratio) * 100.0).round().clamp(0, 95);
+
+      hasTrialForSelected = _selected == VpnProPlanType.yearly
+          ? _yearlyInfo!.hasFreeTrial
+          : _monthlyInfo!.hasFreeTrial;
     }
-
-    Widget planPriceBlock() {
-      if (!hasPrices) {
-        return Text(
-          l10n.settingsPlanPriceLoading,
-          style: theme.textTheme.bodySmall?.copyWith(
-            color: scheme.onSurfaceVariant,
-            fontWeight: FontWeight.w600,
-          ),
-        );
-      }
-
-      if (_selected == VpnProPlanType.yearly) {
-        final perMonthStr = _formatCurrency(yearlyPerMonth!, yearly!.currencyCode);
-
-        return Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(
-              '${monthly!.formattedPrice} / month',
-              style: theme.textTheme.bodySmall?.copyWith(
-                color: scheme.onSurfaceVariant,
-                decoration: TextDecoration.lineThrough,
-                fontWeight: FontWeight.w600,
-              ),
-            ),
-            const SizedBox(height: 4),
-            Text(
-              '$perMonthStr / month',
-              style: theme.textTheme.titleLarge?.copyWith(
-                fontWeight: FontWeight.w900,
-                color: scheme.onSurface,
-              ),
-            ),
-            const SizedBox(height: 4),
-            Text(
-              'Billed ${yearly.formattedPrice} yearly',
-              style: theme.textTheme.bodySmall?.copyWith(
-                color: scheme.onSurfaceVariant,
-                fontWeight: FontWeight.w600,
-              ),
-            ),
-            if (savePercent != null) ...[
-              const SizedBox(height: 8),
-              Container(
-                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-                decoration: BoxDecoration(
-                  color: scheme.primary.withOpacity(0.14),
-                  borderRadius: BorderRadius.circular(999),
-                  border: Border.all(color: scheme.primary.withOpacity(0.25)),
-                ),
-                child: Text(
-                  'Save $savePercent%',
-                  style: theme.textTheme.labelSmall?.copyWith(
-                    fontWeight: FontWeight.w900,
-                    color: scheme.primary,
-                  ),
-                ),
-              ),
-            ],
-          ],
-        );
-      }
-
-      return Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(
-            '${monthly!.formattedPrice} / month',
-            style: theme.textTheme.titleLarge?.copyWith(
-              fontWeight: FontWeight.w900,
-              color: scheme.onSurface,
-            ),
-          ),
-          const SizedBox(height: 4),
-          Text(
-            'Cancel anytime',
-            style: theme.textTheme.bodySmall?.copyWith(
-              color: scheme.onSurfaceVariant,
-              fontWeight: FontWeight.w600,
-            ),
-          ),
-        ],
-      );
-    }
-
-    final disabledBuy = _buying || _isSelectedCurrentPlan();
 
     return Scaffold(
-      backgroundColor: scheme.background,
+      backgroundColor: const Color(0xFF0B101E),
       appBar: AppBar(
         backgroundColor: Colors.transparent,
         elevation: 0,
-        scrolledUnderElevation: 0,
-        titleSpacing: 16,
-        title: Text(
-          l10n.settingsUnlockPro,
-          style: theme.textTheme.titleLarge?.copyWith(
-            fontWeight: FontWeight.w900,
-            color: scheme.onSurface,
-          ),
-        ),
+        iconTheme: const IconThemeData(color: Colors.white),
+        actions: [
+          TextButton(
+            onPressed: PurchaseService.restore,
+            child: const Text("Restore", style: TextStyle(color: Colors.white70)),
+          )
+        ],
       ),
-      body: SafeArea(
-        child: _loading
-            ? const Center(child: CircularProgressIndicator())
-            : SingleChildScrollView(
-          physics: const BouncingScrollPhysics(),
-          padding: const EdgeInsets.fromLTRB(16, 12, 16, 16),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              _sectionBox(
-                context,
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Row(
+      extendBodyBehindAppBar: true,
+      body: _loading
+          ? const Center(child: CircularProgressIndicator(color: Colors.white))
+          : Stack(
+        children: [
+          Positioned(
+            top: 0, left: 0, right: 0,
+            height: 300,
+            child: Container(
+              decoration: BoxDecoration(
+                gradient: LinearGradient(
+                  begin: Alignment.topCenter,
+                  end: Alignment.bottomCenter,
+                  colors: [
+                    Colors.blueAccent.withOpacity(0.2),
+                    const Color(0xFF0B101E),
+                  ],
+                ),
+              ),
+            ),
+          ),
+
+          SafeArea(
+            child: SingleChildScrollView(
+              padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
+              physics: const BouncingScrollPhysics(),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Center(
+                    child: Column(
                       children: [
-                        Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-                          decoration: BoxDecoration(
-                            color: scheme.primary.withOpacity(0.14),
-                            borderRadius: BorderRadius.circular(999),
-                            border: Border.all(
-                              color: scheme.primary.withOpacity(0.25),
+                        const SizedBox(height: 20),
+                        Icon(Icons.rocket_launch_rounded, size: 80, color: Colors.blueAccent.shade100),
+                        const SizedBox(height: 16),
+                        Row(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            Text(
+                              "AvarionX ",
+                              style: theme.textTheme.headlineMedium?.copyWith(
+                                color: Colors.white,
+                                fontWeight: FontWeight.w900,
+                                letterSpacing: -0.5,
+                              ),
                             ),
-                          ),
-                          child: Text(
-                            'VPN PRO',
-                            style: theme.textTheme.labelSmall?.copyWith(
-                              fontWeight: FontWeight.w900,
-                              color: scheme.primary,
+                            Container(
+                              padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                              decoration: BoxDecoration(
+                                border: Border.all(color: Colors.white, width: 1.5),
+                                borderRadius: BorderRadius.circular(6),
+                              ),
+                              child: Text(
+                                "PRO",
+                                style: theme.textTheme.titleSmall?.copyWith(
+                                  color: Colors.white,
+                                  fontWeight: FontWeight.w900,
+                                ),
+                              ),
                             ),
-                          ),
-                        ),
-                        const Spacer(),
-                        TextButton(
-                          onPressed: _openPlanPicker,
-                          style: TextButton.styleFrom(
-                            foregroundColor: scheme.onSurface,
-                            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
-                            backgroundColor: scheme.surface.withOpacity(0.22),
-                            shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(12),
-                            ),
-                          ),
-                          child: Text(
-                            l10n.settingsSwitchPlan,
-                            style: const TextStyle(fontWeight: FontWeight.w800),
-                          ),
+                          ],
                         ),
                       ],
                     ),
-                    const SizedBox(height: 12),
-                    Container(
-                      width: double.infinity,
-                      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-                      decoration: BoxDecoration(
-                        color: scheme.surface.withOpacity(0.22),
-                        borderRadius: BorderRadius.circular(12),
-                        border: Border.all(
-                          color: scheme.outlineVariant.withOpacity(0.25),
-                        ),
+                  ),
+                  const SizedBox(height: 40),
+
+                  _buildFeatureRow(
+                      context,
+                      'Global Server Access',
+                      'Access every VPN server location, including premium high-speed regions.'
+                  ),
+                  _buildFeatureRow(
+                      context,
+                      'Advanced Stealth+ Mode',
+                      'Unlock obfuscation transport for restrictive networks and improved compatibility.'
+                  ),
+                  _buildFeatureRow(
+                      context,
+                      'Premium Security & DNS',
+                      'Unlimited secure DNS queries'
+                  ),
+                  _buildFeatureRow(
+                      context,
+                      'Up to 5 Devices',
+                      'Secure all your hardware. Use your Pro plan on up to 5 devices simultaneously.'
+                  ),
+                  _buildFeatureRow(
+                      context,
+                      'AvarionX Antivirus',
+                      'Unlock scheduled scans and advanced customisation for complete device protection.'
+                  ),
+                  const SizedBox(height: 30),
+
+                  Row(
+                    children: [
+                      _buildPlanCard(
+                        context: context,
+                        type: VpnProPlanType.monthly,
+                        title: 'Monthly',
+                        priceStr: _monthlyInfo?.formattedPrice ?? '-',
+                        subtitleStr: 'Billed Monthly',
                       ),
-                      child: Text(
-                        'Current status: ${_currentStatusLabel.isEmpty ? 'Free' : _currentStatusLabel}',
-                        style: theme.textTheme.bodyMedium?.copyWith(
-                          color: scheme.onSurface,
-                          fontWeight: FontWeight.w700,
-                        ),
+                      const SizedBox(width: 12),
+                      _buildPlanCard(
+                        context: context,
+                        type: VpnProPlanType.yearly,
+                        title: 'Yearly',
+                        discountBadge: savePercent != null ? '-$savePercent%' : null,
+                        crossedOutPrice: _monthlyInfo != null ? '${_monthlyInfo!.formattedPrice}/mo' : null,
+                        priceStr: yearlyPerMonth != null
+                            ? '${_formatCurrency(yearlyPerMonth, _yearlyInfo!.currencyCode)}/mo'
+                            : '-',
+                        subtitleStr: 'Billed Annually at ${_yearlyInfo?.formattedPrice ?? '-'}',
                       ),
+                    ],
+                  ),
+                  const SizedBox(height: 24),
+
+                  Container(
+                    width: double.infinity,
+                    height: 56,
+                    decoration: BoxDecoration(
+                      borderRadius: BorderRadius.circular(28),
+                      gradient: const LinearGradient(
+                        colors: [Color(0xFFE2D6FF), Color(0xFFC1F1FF)],
+                        begin: Alignment.centerLeft,
+                        end: Alignment.centerRight,
+                      ),
+                      boxShadow: [
+                        BoxShadow(
+                          color: Colors.white.withOpacity(0.1),
+                          blurRadius: 20,
+                          offset: const Offset(0, 5),
+                        ),
+                      ],
                     ),
-                    const SizedBox(height: 12),
-                    Text(
-                      'Unlimited VPN access',
-                      style: theme.textTheme.titleLarge?.copyWith(
-                        fontWeight: FontWeight.w900,
-                        color: scheme.onSurface,
-                      ),
-                    ),
-                    const SizedBox(height: 14),
-                    Container(
-                      width: double.infinity,
-                      padding: const EdgeInsets.fromLTRB(12, 12, 12, 12),
-                      decoration: BoxDecoration(
-                        color: scheme.surface.withOpacity(0.22),
-                        borderRadius: BorderRadius.circular(14),
-                        border: Border.all(
-                          color: scheme.outlineVariant.withOpacity(0.25),
-                        ),
-                      ),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(
-                            _titleFor(_selected, l10n),
-                            style: theme.textTheme.titleMedium?.copyWith(
-                              fontWeight: FontWeight.w900,
-                              color: scheme.onSurface,
-                            ),
+                    child: Material(
+                      color: Colors.transparent,
+                      child: InkWell(
+                        borderRadius: BorderRadius.circular(28),
+                        onTap: (_buying || _isSelectedCurrentPlan()) ? null : _buySelected,
+                        child: Center(
+                          child: _buying
+                              ? const SizedBox(
+                            height: 24, width: 24,
+                            child: CircularProgressIndicator(strokeWidth: 3, color: Colors.black87),
+                          )
+                              : Column(
+                            mainAxisAlignment: MainAxisAlignment.center,
+                            children: [
+                              Text(
+                                _isSelectedCurrentPlan() ? 'Current plan' : 'Subscribe',
+                                style: theme.textTheme.titleMedium?.copyWith(
+                                  color: Colors.black,
+                                  fontWeight: FontWeight.w900,
+                                  letterSpacing: 0.5,
+                                ),
+                              ),
+                              if (hasTrialForSelected && !_isSelectedCurrentPlan())
+                                Text(
+                                  "7 Days Free, then ${_selected == VpnProPlanType.yearly ? _yearlyInfo?.formattedPrice : _monthlyInfo?.formattedPrice}",
+                                  style: theme.textTheme.labelSmall?.copyWith(
+                                    color: Colors.black87,
+                                    fontWeight: FontWeight.w600,
+                                  ),
+                                ),
+                            ],
                           ),
-                          const SizedBox(height: 8),
-                          planPriceBlock(),
-                        ],
-                      ),
-                    ),
-                    const SizedBox(height: 14),
-                    SizedBox(
-                      width: double.infinity,
-                      child: FilledButton(
-                        onPressed: disabledBuy ? null : _buySelected,
-                        style: FilledButton.styleFrom(
-                          backgroundColor: scheme.primary,
-                          foregroundColor: scheme.onPrimary,
-                          padding: const EdgeInsets.symmetric(vertical: 14),
-                          shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(14),
-                          ),
-                          textStyle: const TextStyle(
-                            fontWeight: FontWeight.w800,
-                          ),
-                        ),
-                        child: _buying
-                            ? SizedBox(
-                          height: 20,
-                          width: 20,
-                          child: CircularProgressIndicator(
-                            strokeWidth: 2,
-                            color: scheme.onPrimary,
-                          ),
-                        )
-                            : Text(
-                          _isSelectedCurrentPlan()
-                              ? 'Current plan'
-                              : _ctaLabel(_selected, l10n),
                         ),
                       ),
                     ),
-                  ],
-                ),
+                  ),
+                  const SizedBox(height: 20),
+
+                  Text(
+                    "Subscriptions may be managed monthly, yearly or turned off by going to the Play Store Account Settings after purchase. All prices include applicable taxes.",
+                    textAlign: TextAlign.center,
+                    style: theme.textTheme.bodySmall?.copyWith(
+                      color: Colors.white38,
+                      fontSize: 10,
+                      height: 1.4,
+                    ),
+                  ),
+                  const SizedBox(height: 20),
+                ],
               ),
-              const SizedBox(height: 14),
-              _sectionBox(
-                context,
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      l10n.settingsProBenefitsTitle,
-                      style: theme.textTheme.titleMedium?.copyWith(
-                        fontWeight: FontWeight.w900,
-                        color: scheme.onSurface,
-                      ),
-                    ),
-                    const SizedBox(height: 12),
-                    _lineItem(
-                      context,
-                      'Unlimited VPN',
-                      'No monthly cap.',
-                    ),
-                    _lineItem(
-                      context,
-                      'Unlimited DNS queries',
-                      'No cap on dns queries.',
-                    ),
-                    _lineItem(
-                      context,
-                      'Advanced blocklists',
-                      'Unlock premium categories like ads, trackers, and more.',
-                    ),
-                    _lineItem(
-                      context,
-                      'Up to 5 active devices',
-                      'Use your pro plan on up to 5 devices at the same time.',
-                    ),
-                  ],
-                ),
-              ),
-              const SizedBox(height: 12),
-              _sectionBox(
-                context,
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      'AvarionX Antivirus benefits',
-                      style: theme.textTheme.titleMedium?.copyWith(
-                        fontWeight: FontWeight.w900,
-                        color: scheme.onSurface,
-                      ),
-                    ),
-                    const SizedBox(height: 12),
-                    _lineItem(
-                      context,
-                      'Scheduled scans',
-                      'Run automatic scans on a schedule.',
-                    ),
-                    _lineItem(
-                      context,
-                      'Customisation',
-                      'Unlock advanced antivirus settings and controls.',
-                    ),
-                  ],
-                ),
-              ),
-              const SizedBox(height: 12),
-              Text(
-                l10n.settingsProFinePrint,
-                style: theme.textTheme.bodySmall?.copyWith(
-                  color: scheme.onSurfaceVariant.withOpacity(0.9),
-                  height: 1.35,
-                  fontWeight: FontWeight.w600,
-                ),
-              ),
-            ],
+            ),
           ),
-        ),
+        ],
       ),
     );
   }

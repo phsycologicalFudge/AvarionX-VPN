@@ -132,10 +132,35 @@ class FullVpnController extends ChangeNotifier {
     );
   }
 
+  bool get hasPremiumAccess {
+    final serverPlan = (_me?["plan"] ?? "").toString().trim().toLowerCase();
+    return PurchaseService.isPro || serverPlan == "pro";
+  }
+
+  FullVpnServerLocation get _defaultFreeServer {
+    return servers.firstWhere(
+          (s) {
+        final id = s.id.toLowerCase();
+        return !id.startsWith("awg-") && !id.startsWith("hy-");
+      },
+      orElse: () => servers.first,
+    );
+  }
+
+  FullVpnServerLocation get effectiveConnectServer {
+    if (!hasPremiumAccess) {
+      final id = _selectedServerId.toLowerCase();
+      if (id.startsWith("awg-") || id.startsWith("hy-")) {
+        return _defaultFreeServer;
+      }
+    }
+    return selectedServer;
+  }
+
   String get selectedServerCountryCode => selectedServer.countryCode;
 
   String get selectedRegionKey {
-    final id = _selectedServerId.toLowerCase();
+    final id = effectiveConnectServer.id.toLowerCase();
     final parts = id.split("-").where((e) => e.isNotEmpty).toList();
 
     if (parts.length >= 2 && (parts.first == "awg" || parts.first == "hy")) {
@@ -146,7 +171,11 @@ class FullVpnController extends ChangeNotifier {
   }
 
   String get _selectedProvisionRegion {
-    final id = _selectedServerId.toLowerCase();
+    if (!hasPremiumAccess) {
+      return "de";
+    }
+
+    final id = effectiveConnectServer.id.toLowerCase();
     final parts = id.split("-").where((e) => e.isNotEmpty).toList();
 
     if (parts.length >= 2 && (parts.first == "awg" || parts.first == "hy")) {
@@ -227,18 +256,19 @@ class FullVpnController extends ChangeNotifier {
   }
 
   bool get _selectedServerIsAwg {
-    final id = _selectedServerId.toLowerCase();
+    final id = effectiveConnectServer.id.toLowerCase();
     final parts = id.split("-").where((e) => e.isNotEmpty).toList();
     return parts.isNotEmpty && parts.first == "awg";
   }
 
   bool get _selectedServerIsHysteria {
-    final id = _selectedServerId.toLowerCase();
+    final id = effectiveConnectServer.id.toLowerCase();
     final parts = id.split("-").where((e) => e.isNotEmpty).toList();
     return parts.isNotEmpty && parts.first == "hy";
   }
 
   String get vpnTransport {
+    if (!hasPremiumAccess) return "wireguard";
     if (_selectedServerIsHysteria) return "hysteria";
     if (_selectedServerIsAwg) return "amnezia";
     return _vpnTransport;
@@ -687,6 +717,10 @@ class FullVpnController extends ChangeNotifier {
 
     final kp = await _getOrCreateKeypair();
     if (_disposed) return;
+
+    if (!hasPremiumAccess && (_selectedServerIsAwg || _selectedServerIsHysteria)) {
+      _net("free_user_forcing_standard_pool selected=$_selectedServerId effective=${effectiveConnectServer.id}");
+    }
 
     final peer = await _provision(
       deviceId,
