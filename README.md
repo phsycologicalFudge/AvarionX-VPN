@@ -102,9 +102,9 @@ Get the latest APK from GitHub Releases:
 https://github.com/phsycologicalFudge/AvarionX-VPN/releases
 
 ## Privacy
-
+[Private policy
+](https://colourswift.com/Policies/Private-Policy)
 The VPN client is designed with a minimal data collection philosophy.
-
 - Strict *No Activity Logs* policy. Encrypted traffic content is never inspected or logged.
 - No ads, analytics, or tracking libraries are included in the application.
 
