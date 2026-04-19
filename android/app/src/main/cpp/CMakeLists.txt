@@ -69,3 +69,5 @@ target_link_libraries(
         atomic
         m
 )
+
+target_link_options(cs_tun2socks PRIVATE "-Wl,-z,max-page-size=16384")

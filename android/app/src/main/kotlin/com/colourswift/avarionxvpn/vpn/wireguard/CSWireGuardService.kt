@@ -38,6 +38,19 @@ class CSWireGuardService : VpnService() {
         private const val RC_PAUSE_5 = 230005
         private const val RC_PAUSE_15 = 230015
         private const val RC_PAUSE_30 = 230030
+
+        @Volatile private var instance: CSWireGuardService? = null
+
+        fun snapshotStats(): Map<String, Long>? {
+            val svc = instance ?: return null
+            val b = svc.backend ?: return null
+            return try {
+                val stats = b.getStatistics(svc.tunnel)
+                mapOf("rxBytes" to stats.totalRx(), "txBytes" to stats.totalTx())
+            } catch (_: Throwable) {
+                null
+            }
+        }
     }
 
     private var backend: GoBackend? = null
@@ -59,6 +72,11 @@ class CSWireGuardService : VpnService() {
     private var lastConfigRaw: String? = null
     private var lastExcludedAppsJson: String? = null
     private var resumeFuture: ScheduledFuture<*>? = null
+
+    override fun onCreate() {
+        super.onCreate()
+        instance = this
+    }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         val i = intent ?: return START_NOT_STICKY
@@ -263,7 +281,7 @@ class CSWireGuardService : VpnService() {
         }
 
         val usage = usageText.trim()
-        return if (usage.isNotEmpty()) "$status • $usage" else status
+        return if (usage.isNotEmpty()) usage else status
     }
 
     private fun connectTunnel(raw: String, excludedJson: String?) {
@@ -457,6 +475,7 @@ class CSWireGuardService : VpnService() {
     }
 
     override fun onDestroy() {
+        instance = null
         try {
             cancelResumeTimer()
             pausedUntilMs = 0L

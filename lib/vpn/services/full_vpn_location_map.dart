@@ -20,6 +20,7 @@ class FullVpnLocationMapCard extends StatefulWidget {
   final List<FullVpnServerLocation> servers;
   final String? selectedServerId;
   final ValueChanged<FullVpnServerLocation>? onServerTap;
+  final bool showFlagMarkers;
 
   const FullVpnLocationMapCard({
     super.key,
@@ -31,6 +32,7 @@ class FullVpnLocationMapCard extends StatefulWidget {
     this.servers = const [],
     this.selectedServerId,
     this.onServerTap,
+    this.showFlagMarkers = false,
   });
 
   @override
@@ -477,11 +479,19 @@ class _FullVpnLocationMapCardState extends State<FullVpnLocationMapCard>
     _queueFocus(force: true);
   }
 
+  static String _countryCodeToEmoji(String code) {
+    return code.toUpperCase().runes
+        .map((r) => String.fromCharCode(r + 127397))
+        .join();
+  }
+
   Widget _serverDot({
     required ColorScheme scheme,
     required bool selected,
     required bool connected,
     required VoidCallback? onTapDown,
+    required String countryCode,
+    required bool showFlag,
   }) {
     return AnimatedBuilder(
       animation: _pulseCtrl,
@@ -495,7 +505,7 @@ class _FullVpnLocationMapCardState extends State<FullVpnLocationMapCard>
 
         final ringOpacity = selected ? (0.28 + 0.22 * pulse) : (0.14 + 0.10 * pulse);
         final ringSize = selected ? (38 + 10 * pulse) : (26 + 6 * pulse);
-        final coreSize = selected ? 18.0 : 14.0;
+        final coreSize = selected ? 22.0 : 18.0;
 
         return Listener(
           behavior: HitTestBehavior.opaque,
@@ -514,18 +524,46 @@ class _FullVpnLocationMapCardState extends State<FullVpnLocationMapCard>
                     color: dotColor.withOpacity(ringOpacity),
                   ),
                 ),
-                Container(
-                  width: coreSize,
-                  height: coreSize,
-                  decoration: BoxDecoration(
-                    shape: BoxShape.circle,
-                    color: dotColor,
-                    border: Border.all(
-                      color: Colors.white.withOpacity(0.90),
-                      width: selected ? 2.2 : 2.0,
+                if (showFlag)
+                  Container(
+                    width: coreSize,
+                    height: coreSize,
+                    decoration: BoxDecoration(
+                      shape: BoxShape.circle,
+                      color: Colors.black.withOpacity(0.4),
+                      border: Border.all(
+                        color: selected
+                            ? (connected
+                            ? Colors.greenAccent
+                            : Colors.white.withOpacity(0.90))
+                            : Colors.white.withOpacity(0.55),
+                        width: selected ? 1.8 : 1.4,
+                      ),
+                    ),
+                    clipBehavior: Clip.hardEdge,
+                    child: Center(
+                      child: Text(
+                        _countryCodeToEmoji(countryCode),
+                        style: TextStyle(
+                          fontSize: selected ? 12 : 9,
+                          height: 1,
+                        ),
+                      ),
+                    ),
+                  )
+                else
+                  Container(
+                    width: selected ? 18.0 : 14.0,
+                    height: selected ? 18.0 : 14.0,
+                    decoration: BoxDecoration(
+                      shape: BoxShape.circle,
+                      color: dotColor,
+                      border: Border.all(
+                        color: Colors.white.withOpacity(0.90),
+                        width: selected ? 2.2 : 2.0,
+                      ),
                     ),
                   ),
-                ),
               ],
             ),
           ),
@@ -555,6 +593,8 @@ class _FullVpnLocationMapCardState extends State<FullVpnLocationMapCard>
             selected: selected,
             connected: widget.connected,
             onTapDown: () => _tapServer(s),
+            countryCode: s.countryCode,
+            showFlag: widget.showFlagMarkers,
           ),
         ),
       );

@@ -14,6 +14,7 @@ import com.colourswift.avarionxvpn.vpn.amnezia.CSAmneziaWireGuardService
 import com.colourswift.avarionxvpn.vpn.wireguard.CSWireGuardService
 import com.colourswift.avarionxvpn.vpn.hysteria.CSHysteriaService
 import io.flutter.embedding.android.FlutterActivity
+import io.flutter.embedding.android.FlutterFragmentActivity
 import io.flutter.embedding.engine.FlutterEngine
 import io.flutter.plugin.common.EventChannel
 import io.flutter.plugin.common.MethodCall
@@ -69,7 +70,7 @@ object CsDnsEvents {
     }
 }
 
-class MainActivity : FlutterActivity() {
+class MainActivity : FlutterFragmentActivity() {
     private val REQ_WG_VPN = 9911
     private val REQ_DNS_VPN_PERMISSION = 777
 
@@ -264,6 +265,19 @@ class MainActivity : FlutterActivity() {
 
                     "isDnsVpnRunning" -> {
                         result.success(CSVpnService.isRunning)
+                    }
+
+                    "getTunnelStats" -> {
+                        val stats: Map<String, Long>? = when {
+                            CSWireGuardService.isRunning -> CSWireGuardService.snapshotStats()
+                            CSAmneziaWireGuardService.isRunning -> CSAmneziaWireGuardService.snapshotStats()
+                            CSHysteriaService.isRunning -> mapOf(
+                                "rxBytes" to CSHysteriaService.rxBytes,
+                                "txBytes" to CSHysteriaService.txBytes
+                            )
+                            else -> null
+                        }
+                        result.success(stats)
                     }
 
                     "startXray" -> {
@@ -470,17 +484,30 @@ class MainActivity : FlutterActivity() {
                     "updateNotificationUsage" -> {
                         val usageText = (call.arguments as? String)?.trim().orEmpty()
 
-                        if (!CSWireGuardService.isRunning) {
-                            result.success(false)
-                            return@setMethodCallHandler
+                        when {
+                            CSWireGuardService.isRunning -> {
+                                val i = Intent(applicationContext, CSWireGuardService::class.java).apply {
+                                    action = CSWireGuardService.ACTION_UPDATE_USAGE
+                                    putExtra(CSWireGuardService.EXTRA_USAGE_TEXT, usageText)
+                                }
+                                applicationContext.startService(i)
+                            }
+                            CSAmneziaWireGuardService.isRunning -> {
+                                val i = Intent(applicationContext, CSAmneziaWireGuardService::class.java).apply {
+                                    action = CSAmneziaWireGuardService.ACTION_UPDATE_USAGE
+                                    putExtra(CSAmneziaWireGuardService.EXTRA_USAGE_TEXT, usageText)
+                                }
+                                applicationContext.startService(i)
+                            }
+                            CSHysteriaService.isRunning -> {
+                                val i = Intent(applicationContext, CSHysteriaService::class.java).apply {
+                                    action = CSHysteriaService.ACTION_UPDATE_USAGE
+                                    putExtra(CSHysteriaService.EXTRA_USAGE_TEXT, usageText)
+                                }
+                                applicationContext.startService(i)
+                            }
                         }
 
-                        val i = Intent(applicationContext, CSWireGuardService::class.java).apply {
-                            action = CSWireGuardService.ACTION_UPDATE_USAGE
-                            putExtra(CSWireGuardService.EXTRA_USAGE_TEXT, usageText)
-                        }
-
-                        applicationContext.startService(i)
                         result.success(true)
                     }
 

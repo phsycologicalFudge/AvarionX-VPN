@@ -712,6 +712,37 @@ class _FullVpnModeScreenState extends State<FullVpnModeScreen>
     );
   }
 
+  Widget _speedRow(BuildContext context) {
+    if (!c.connected || c.connectingUi) return const SizedBox.shrink();
+
+    final theme = Theme.of(context);
+    final scheme = theme.colorScheme;
+
+    return Row(
+      children: [
+        Icon(Icons.arrow_downward_rounded, size: 14, color: const Color(0xFF4ADE80)),
+        const SizedBox(width: 4),
+        Text(
+          c.formatSpeed(c.downloadSpeedBps),
+          style: theme.textTheme.bodySmall?.copyWith(
+            fontWeight: FontWeight.w700,
+            color: scheme.onSurface,
+          ),
+        ),
+        const SizedBox(width: 14),
+        Icon(Icons.arrow_upward_rounded, size: 14, color: scheme.primary),
+        const SizedBox(width: 4),
+        Text(
+          c.formatSpeed(c.uploadSpeedBps),
+          style: theme.textTheme.bodySmall?.copyWith(
+            fontWeight: FontWeight.w700,
+            color: scheme.onSurface,
+          ),
+        ),
+      ],
+    );
+  }
+
   Widget _mapViewToggle(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
 
@@ -838,7 +869,7 @@ class _FullVpnModeScreenState extends State<FullVpnModeScreen>
         ],
         _serverSelector(context),
         const SizedBox(height: 10),
-        _usageRow(context),
+        _speedRow(context),
         const SizedBox(height: 16),
         Row(
           children: [
@@ -932,6 +963,7 @@ class _FullVpnModeScreenState extends State<FullVpnModeScreen>
               onServerTap: (s) {
                 c.selectServerPreview(s);
               },
+              showFlagMarkers: c.showFlagMarkers,
             )
                 : FullVpnLocationMapCard(
               key: const ValueKey("flat"),
@@ -945,6 +977,7 @@ class _FullVpnModeScreenState extends State<FullVpnModeScreen>
               onServerTap: (s) {
                 c.selectServerPreview(s);
               },
+              showFlagMarkers: c.showFlagMarkers,
             ),
           ),
         ),
@@ -1021,19 +1054,19 @@ class _FullVpnModeScreenState extends State<FullVpnModeScreen>
     );
   }
 
-  Future<void> _pushUsageToNotification() async {
-    await _notifWorker.pushUsage(
+  Future<void> _pushStatusToNotification() async {
+    await _notifWorker.pushStatus(
       connected: c.connected,
       connectingUi: c.connectingUi,
-      unlimited: c.unlimited,
-      usedBytes: c.usedBytes,
-      uiLimitBytes: c.effectiveUiLimitBytes,
-      formatBytes: c.formatBytes,
+      serverLabel: c.selectedServer.label,
+      downloadSpeedBps: c.downloadSpeedBps,
+      uploadSpeedBps: c.uploadSpeedBps,
+      formatSpeed: c.formatSpeed,
     );
   }
 
   void _onControllerChanged() {
-    _pushUsageToNotification();
+    _pushStatusToNotification();
   }
 
   bool _hasAnyProEntitlement() {

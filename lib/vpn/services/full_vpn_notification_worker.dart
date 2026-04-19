@@ -2,28 +2,22 @@ import 'package:flutter/services.dart';
 
 class FullVpnNotificationWorker {
   static const MethodChannel _channel = MethodChannel('cs_fullvpn');
-  String _lastUsageText = '';
+  String _lastText = '';
 
-  Future<void> pushUsage({
+  Future<void> pushStatus({
     required bool connected,
     required bool connectingUi,
-    required bool unlimited,
-    required int usedBytes,
-    required int uiLimitBytes,
-    required String Function(int bytes) formatBytes,
+    required String serverLabel,
+    required double downloadSpeedBps,
+    required double uploadSpeedBps,
+    required String Function(double bps) formatSpeed,
   }) async {
     if (!connected || connectingUi) return;
 
-    String text;
-    if (unlimited) {
-      text = "${formatBytes(usedBytes)} used";
-    } else {
-      if (uiLimitBytes <= 0) return;
-      text = "${formatBytes(usedBytes)} / ${formatBytes(uiLimitBytes)}";
-    }
+    final text = '$serverLabel  ↓${formatSpeed(downloadSpeedBps)}  ↑${formatSpeed(uploadSpeedBps)}';
 
-    if (text == _lastUsageText) return;
-    _lastUsageText = text;
+    if (text == _lastText) return;
+    _lastText = text;
 
     try {
       await _channel.invokeMethod('updateNotificationUsage', text);
@@ -31,6 +25,6 @@ class FullVpnNotificationWorker {
   }
 
   void resetCache() {
-    _lastUsageText = '';
+    _lastText = '';
   }
 }

@@ -4,6 +4,7 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 import 'dart:math';
+import 'package:colourswift_av/vpn/services/sound_controller/vpn_sound_controller.dart';
 import 'package:cryptography/cryptography.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
@@ -34,6 +35,7 @@ class FullVpnController extends ChangeNotifier {
   static const kLastLat = "cs_vpn_last_lat";
   static const kLastLon = "cs_vpn_last_lon";
   static const kAnonymousDeviceKeyFallback = "cs_anonymous_device_key_fallback";
+  static const kShowFlagMarkers = "cs_vpn_show_flag_markers";
   static const int kStandaloneSoftLimitBytes = 10 * 1024 * 1024 * 1024;
 
   final String apiBase;
@@ -50,6 +52,8 @@ class FullVpnController extends ChangeNotifier {
   Timer? _runtimeSyncTimer;
   Timer? _serverStatusTimer;
   Timer? _probeTimer;
+  Timer? _statsTimer;
+  final VpnSoundController soundController = VpnSoundController();
 
   Map<String, dynamic> _serverStatusByRegion = {};
   bool _serverStatusEverLoaded = false;
@@ -62,6 +66,8 @@ class FullVpnController extends ChangeNotifier {
   bool _disposed = false;
   bool _connectingUi = false;
   DateTime? _connectStartedAt;
+
+  bool _showFlagMarkers = false;
 
   dynamic _loc;
   DateTime? _locFetchedAt;
@@ -78,6 +84,12 @@ class FullVpnController extends ChangeNotifier {
 
   bool _usageSyncing = false;
   bool _usageEverLoaded = false;
+
+  int _rxBytes = 0;
+  int _txBytes = 0;
+  DateTime? _lastStatsAt;
+  double _downloadSpeedBps = 0;
+  double _uploadSpeedBps = 0;
 
   String _selectedServerId = "de-nuremberg";
   String _vpnTransport = "wireguard";
@@ -122,6 +134,9 @@ class FullVpnController extends ChangeNotifier {
   double? get lastLat => _lastLat;
   double? get lastLon => _lastLon;
   bool get serverStatusEverLoaded => _serverStatusEverLoaded;
+  bool get showFlagMarkers => _showFlagMarkers;
+  double get downloadSpeedBps => _downloadSpeedBps;
+  double get uploadSpeedBps => _uploadSpeedBps;
 
   List<FullVpnServerLocation> get servers => kFullVpnServers;
 
@@ -308,10 +323,19 @@ class FullVpnController extends ChangeNotifier {
 
   Future<void> setVpnTransport(String value) => _setVpnTransportImpl(value);
 
+  Future<void> setShowFlagMarkers(bool value) async {
+    _showFlagMarkers = value;
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setBool(kShowFlagMarkers, value);
+    notifyListeners();
+  }
+
   Future<void> init() async {
+    await soundController.init();
     await _loadBlocklists();
     await _loadSelectedServer();
     await _loadVpnTransport();
+    _showFlagMarkers = (await SharedPreferences.getInstance()).getBool(kShowFlagMarkers) ?? false;
     await _loadToken();
     await _loadLastLocation();
     await _syncWithRuntime();
@@ -423,6 +447,7 @@ class FullVpnController extends ChangeNotifier {
 
       await _setGlobalModeOff();
       _stopUsagePolling();
+      _stopStatsPolling();
 
       await _syncWithRuntime();
       await refreshLocation(force: true);
@@ -573,6 +598,12 @@ class FullVpnController extends ChangeNotifier {
     return "${size.toStringAsFixed(2)} ${units[unit]}";
   }
 
+  String formatSpeed(double bps) {
+    if (bps < 1024) return "${bps.toStringAsFixed(0)} B/s";
+    if (bps < 1024 * 1024) return "${(bps / 1024).toStringAsFixed(1)} KB/s";
+    return "${(bps / (1024 * 1024)).toStringAsFixed(1)} MB/s";
+  }
+
   double? locLat() {
     final l = _loc;
     if (l == null) return null;
@@ -645,6 +676,8 @@ class FullVpnController extends ChangeNotifier {
     _runtimeSyncTimer?.cancel();
     _serverStatusTimer?.cancel();
     _probeTimer?.cancel();
+    _statsTimer?.cancel();
+    soundController.dispose();
     super.dispose();
   }
 
@@ -943,6 +976,51 @@ class FullVpnController extends ChangeNotifier {
     _probeTimer = null;
   }
 
+  Future<void> _pollTunnelStats() async {
+    if (!_connected) {
+      if (_downloadSpeedBps != 0 || _uploadSpeedBps != 0) {
+        _downloadSpeedBps = 0;
+        _uploadSpeedBps = 0;
+        notifyListeners();
+      }
+      _lastStatsAt = null;
+      return;
+    }
+    try {
+      final result = await vpnChannel.invokeMethod<Map>('getTunnelStats');
+      if (result == null) return;
+      final rx = (result['rxBytes'] as num?)?.toInt() ?? 0;
+      final tx = (result['txBytes'] as num?)?.toInt() ?? 0;
+      final now = DateTime.now();
+      if (_lastStatsAt != null) {
+        final dt = now.difference(_lastStatsAt!).inMilliseconds / 1000.0;
+        if (dt > 0) {
+          _downloadSpeedBps = ((rx - _rxBytes) / dt).clamp(0, double.infinity);
+          _uploadSpeedBps = ((tx - _txBytes) / dt).clamp(0, double.infinity);
+        }
+      }
+      _rxBytes = rx;
+      _txBytes = tx;
+      _lastStatsAt = now;
+      notifyListeners();
+    } catch (_) {}
+  }
+
+  void _startStatsPolling() {
+    _statsTimer?.cancel();
+    _statsTimer = Timer.periodic(const Duration(seconds: 1), (_) => _pollTunnelStats());
+  }
+
+  void _stopStatsPolling() {
+    _statsTimer?.cancel();
+    _statsTimer = null;
+    _rxBytes = 0;
+    _txBytes = 0;
+    _lastStatsAt = null;
+    _downloadSpeedBps = 0;
+    _uploadSpeedBps = 0;
+  }
+
   Future<void> _startRuntimeSync() async {
     _runtimeSyncTimer?.cancel();
     _runtimeSyncTimer = Timer.periodic(
@@ -1025,12 +1103,14 @@ class FullVpnController extends ChangeNotifier {
       _connectingUi = true;
       _status = "Securing connection...";
       notifyListeners();
+      unawaited(soundController.playConnect());
       await _postConnectRefresh();
       return;
     }
 
     if (changed && !_connected) {
       _connectedAt = null;
+      unawaited(soundController.playDisconnect());
       notifyListeners();
       return;
     }
@@ -1051,9 +1131,11 @@ class FullVpnController extends ChangeNotifier {
     if (_connected) {
       if (_usageTimer == null) _startUsagePolling();
       if (_probeTimer == null) _startProbePolling();
+      if (_statsTimer == null) _startStatsPolling();
     } else {
       if (_usageTimer != null) _stopUsagePolling();
       if (_probeTimer != null) _stopProbePolling();
+      if (_statsTimer != null) _stopStatsPolling();
     }
 
     if (changed) notifyListeners();

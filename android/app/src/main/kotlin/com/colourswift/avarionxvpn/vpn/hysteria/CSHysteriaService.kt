@@ -21,14 +21,18 @@ class CSHysteriaService : VpnService() {
     companion object {
         @Volatile var isRunning: Boolean = false
         @Volatile var isReady: Boolean = false
+        @Volatile var rxBytes: Long = 0L
+        @Volatile var txBytes: Long = 0L
 
         const val ACTION_START = "com.colourswift.avarionxvpn.HY_START"
         const val ACTION_STOP = "com.colourswift.avarionxvpn.HY_STOP"
+        const val ACTION_UPDATE_USAGE = "com.colourswift.avarionxvpn.HY_UPDATE_USAGE"
 
         const val EXTRA_SERVER = "server"
         const val EXTRA_AUTH = "auth"
         const val EXTRA_SNI = "sni"
         const val EXTRA_DNS = "dns"
+        const val EXTRA_USAGE_TEXT = "usage_text"
 
         private const val NOTIF_ID = 232
         private const val NOTIF_CHANNEL = "cs_hy_status"
@@ -47,6 +51,8 @@ class CSHysteriaService : VpnService() {
     private var fdControlServer: HysteriaFdControlServer? = null
 
     private val stats = HysteriaVpnStats()
+
+    private var usageText: String = ""
 
     private var lastServer: String? = null
     private var lastAuth: String? = null
@@ -71,6 +77,13 @@ class CSHysteriaService : VpnService() {
         if (action == null) {
             stopSelf()
             return START_NOT_STICKY
+        }
+
+        if (action == ACTION_UPDATE_USAGE) {
+            val text = i.getStringExtra(EXTRA_USAGE_TEXT)?.trim().orEmpty()
+            usageText = text
+            if (isRunning) updateNotif(composeNotifTitle())
+            return START_STICKY
         }
 
         if (action == ACTION_STOP) {
@@ -113,7 +126,7 @@ class CSHysteriaService : VpnService() {
                         dnsIp = dns
                     )
 
-                    updateNotif("Protected by Stealth+")
+                    updateNotif(composeNotifTitle())
                     HyLog.write(this, "ACTION_START success isRunning=$isRunning isReady=$isReady")
                 } catch (t: Throwable) {
                     stats.setLastError(t.message ?: "unknown start error")
@@ -192,6 +205,8 @@ class CSHysteriaService : VpnService() {
 
         isRunning = true
         isReady = processManager?.isAlive() == true
+        rxBytes = 0L
+        txBytes = 0L
         HyLog.write(this, "flags set isRunning=$isRunning isReady=$isReady")
     }
 
@@ -263,6 +278,8 @@ misc:
 
         isRunning = false
         isReady = false
+        rxBytes = 0L
+        txBytes = 0L
         HyLog.write(this, "stopSession done")
     }
 
@@ -291,6 +308,11 @@ misc:
             NotificationManager.IMPORTANCE_LOW
         )
         mgr.createNotificationChannel(channel)
+    }
+
+    private fun composeNotifTitle(): String {
+        val usage = usageText.trim()
+        return if (usage.isNotEmpty()) "Protected by Stealth+ • $usage" else "Protected by Stealth+"
     }
 
     private fun disconnectPendingIntent(): PendingIntent {

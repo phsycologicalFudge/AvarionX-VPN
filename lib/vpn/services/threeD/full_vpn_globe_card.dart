@@ -14,6 +14,7 @@ class FullVpnGlobeCard extends StatefulWidget {
   final List<FullVpnServerLocation> servers;
   final String? selectedServerId;
   final ValueChanged<FullVpnServerLocation>? onServerTap;
+  final bool showFlagMarkers;
 
   const FullVpnGlobeCard({
     super.key,
@@ -25,6 +26,7 @@ class FullVpnGlobeCard extends StatefulWidget {
     this.servers = const [],
     this.selectedServerId,
     this.onServerTap,
+    this.showFlagMarkers = false,
   });
 
   @override
@@ -131,12 +133,13 @@ class _FullVpnGlobeCardState extends State<FullVpnGlobeCard>
     final serverIdsChanged = !_sameServerIds(oldWidget.servers, widget.servers);
     final connectionChanged = oldWidget.connected != widget.connected ||
         oldWidget.isConnecting != widget.isConnecting;
+    final flagMarkersChanged = oldWidget.showFlagMarkers != widget.showFlagMarkers;
 
     final oldHadIpPoint = oldWidget.lat != null && oldWidget.lon != null &&
         oldWidget.lat!.isFinite && oldWidget.lon!.isFinite;
     final ipPresenceChanged = oldHadIpPoint != _hasIpPoint;
 
-    if (selectedChanged || serverIdsChanged || ipPresenceChanged || connectionChanged) {
+    if (selectedChanged || serverIdsChanged || ipPresenceChanged || connectionChanged || flagMarkersChanged) {
       _rebuildScene();
     }
 
@@ -175,6 +178,8 @@ class _FullVpnGlobeCardState extends State<FullVpnGlobeCard>
             child: FullVpnGlobeServerMarker(
               selected: server.id == selectedId,
               connected: widget.connected,
+              countryCode: server.countryCode,
+              showFlag: widget.showFlagMarkers,
             ),
           ),
         ),
@@ -235,6 +240,8 @@ class _FullVpnGlobeCardState extends State<FullVpnGlobeCard>
             child: FullVpnGlobeServerMarker(
               selected: server.id == selectedId,
               connected: widget.connected,
+              countryCode: server.countryCode,
+              showFlag: widget.showFlagMarkers,
             ),
           ),
         ),

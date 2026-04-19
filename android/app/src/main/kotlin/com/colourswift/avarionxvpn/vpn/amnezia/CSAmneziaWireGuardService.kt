@@ -34,6 +34,19 @@ class CSAmneziaWireGuardService : VpnService() {
         private const val RC_PAUSE_5 = 231005
         private const val RC_PAUSE_15 = 231015
         private const val RC_PAUSE_30 = 231030
+
+        @Volatile private var instance: CSAmneziaWireGuardService? = null
+
+        fun snapshotStats(): Map<String, Long>? {
+            val svc = instance ?: return null
+            val b = svc.backend ?: return null
+            return try {
+                val stats = b.getStatistics(svc.tunnel)
+                mapOf("rxBytes" to stats.totalRx(), "txBytes" to stats.totalTx())
+            } catch (_: Throwable) {
+                null
+            }
+        }
     }
 
     private var backend: GoBackend? = null
@@ -51,6 +64,11 @@ class CSAmneziaWireGuardService : VpnService() {
 
     private var lastConfigRaw: String? = null
     private var lastExcludedAppsJson: String? = null
+
+    override fun onCreate() {
+        super.onCreate()
+        instance = this
+    }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         val i = intent ?: return START_NOT_STICKY
@@ -221,39 +239,23 @@ class CSAmneziaWireGuardService : VpnService() {
                 ch.setShowBadge(false)
                 mgr.createNotificationChannel(ch)
             }
-
-            val n = buildServiceNotification(status)
-            startForeground(NOTIF_ID, n)
+            startForeground(NOTIF_ID, buildServiceNotification(status))
         } catch (t: Throwable) {
             Log.e("CSAWG", "startForegroundCompat failed", t)
-            try {
-                val n2 = NotificationCompat.Builder(this)
-                    .setContentTitle("Secure VPN")
-                    .setContentText("Starting...")
-                    .setSmallIcon(android.R.drawable.stat_sys_warning)
-                    .setOngoing(true)
-                    .setCategory(NotificationCompat.CATEGORY_SERVICE)
-                    .setPriority(NotificationCompat.PRIORITY_LOW)
-                    .build()
-                startForeground(NOTIF_ID, n2)
-            } catch (t2: Throwable) {
-                Log.e("CSAWG", "fallback startForeground failed", t2)
-            }
         }
     }
 
     private fun updateNotif(status: String) {
         try {
             val mgr = getSystemService(NotificationManager::class.java) ?: return
-            val n = buildServiceNotification(status)
-            mgr.notify(NOTIF_ID, n)
+            mgr.notify(NOTIF_ID, buildServiceNotification(status))
         } catch (_: Throwable) {
         }
     }
 
     private fun composeNotifText(status: String): String {
         val usage = usageText.trim()
-        return if (usage.isNotEmpty()) "$status • $usage" else status
+        return if (usage.isNotEmpty()) usage else status
     }
 
     private fun ensureBackend(): GoBackend {
@@ -368,6 +370,7 @@ class CSAmneziaWireGuardService : VpnService() {
     }
 
     override fun onDestroy() {
+        instance = null
         try {
             worker.execute {
                 stopBackendOnly()

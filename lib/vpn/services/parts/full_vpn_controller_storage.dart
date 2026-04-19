@@ -28,8 +28,6 @@ extension _FullVpnControllerStorage on FullVpnController {
   Future<void> _clearSession() async {
     final prefs = await SharedPreferences.getInstance();
     await prefs.remove(FullVpnController.kAuthToken);
-    await prefs.remove(FullVpnController.kWgPriv);
-    await prefs.remove(FullVpnController.kWgPub);
     await prefs.remove(FullVpnController.kDnsBlocklistsJson);
     await prefs.remove(FullVpnController.kWgConfigLast);
 
