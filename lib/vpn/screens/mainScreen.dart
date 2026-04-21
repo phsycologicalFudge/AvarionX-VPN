@@ -23,6 +23,7 @@ import 'full_vpn_customisation_screen.dart';
 import 'full_vpn_dns_tab.dart';
 import 'package:app_links/app_links.dart';
 import 'dart:ui' as ui;
+import 'package:colourswift_av/vpn/services/full_vpn_free_pool_service.dart';
 
 class FullVpnModeScreen extends StatefulWidget {
   const FullVpnModeScreen({super.key});
@@ -42,6 +43,8 @@ class _FullVpnModeScreenState extends State<FullVpnModeScreen>
   String _mapView = "flat";
 
   final FullVpnNotificationWorker _notifWorker = FullVpnNotificationWorker();
+  late final FullVpnFreePoolService _freePoolService;
+  String _freePool = "";
 
   @override
   void initState() {
@@ -54,6 +57,10 @@ class _FullVpnModeScreenState extends State<FullVpnModeScreen>
       deepLinkPrefix: "colourswift://auth?token=",
     );
 
+    _freePoolService = const FullVpnFreePoolService(
+      apiBase: "https://api.colourswift.com",
+    );
+
     _glowCtrl = AnimationController(
       vsync: this,
       duration: const Duration(seconds: 8),
@@ -63,6 +70,7 @@ class _FullVpnModeScreenState extends State<FullVpnModeScreen>
     c.addListener(_onControllerChanged);
     _initDeepLinks();
     _loadMapView();
+    _initFreePool();
   }
 
   @override
@@ -91,6 +99,22 @@ class _FullVpnModeScreenState extends State<FullVpnModeScreen>
     setState(() {
       _mapView = saved == "globe" ? "globe" : "flat";
     });
+  }
+
+  Future<void> _initFreePool() async {
+    final cached = await _freePoolService.getCachedPool();
+    if (!_closing && mounted && cached.isNotEmpty) {
+      setState(() {
+        _freePool = cached;
+      });
+    }
+
+    final fresh = await _freePoolService.refreshPool();
+    if (!_closing && mounted && fresh.isNotEmpty && fresh != _freePool) {
+      setState(() {
+        _freePool = fresh;
+      });
+    }
   }
 
   Future<void> _setMapView(String value) async {
@@ -283,40 +307,45 @@ class _FullVpnModeScreenState extends State<FullVpnModeScreen>
     }
   }
 
+  static const _euCountryCodes = {
+    "GB","IE","DE","FR","NL","BE","LU","CH","AT","PL","CZ","SK","HU",
+    "DK","SE","NO","FI","IS","ES","PT","IT","GR","RO","BG","HR","SI",
+    "EE","LV","LT","UA","MD","RS","BA","ME","MK","AL","TR","CY","MT",
+  };
+
   String get _effectiveServerId {
-    if (_hasAnyProEntitlement()) {
-      return c.selectedServerId;
-    }
+    if (c.servers.isEmpty) return c.selectedServerId;
 
-    if (c.connected) {
+    if (c.connected && c.uiCountry.isNotEmpty) {
       final countryLower = c.uiCountry.trim().toLowerCase();
-      if (countryLower.isNotEmpty) {
-        for (final s in c.servers) {
-          final name = _countryName(s.countryCode).toLowerCase();
-          final code = s.countryCode.toLowerCase();
-          final label = s.label.toLowerCase();
-
-          if (name == countryLower || code == countryLower || label.contains(countryLower)) {
-            return s.id;
-          }
-        }
+      for (final s in c.servers) {
+        if (_isAwgNode(s) || _isHysteriaNode(s)) continue;
+        final name = _countryName(s.countryCode).toLowerCase();
+        final code = s.countryCode.toLowerCase();
+        if (name == countryLower || code == countryLower) return s.id;
       }
     }
 
-    final deviceCountry = ui.PlatformDispatcher.instance.locale.countryCode?.toUpperCase() ?? "";
-    if (deviceCountry.isNotEmpty) {
+    if (_hasAnyProEntitlement()) {
+      final id = c.effectiveConnectServer.id;
+      if (id.isNotEmpty && c.servers.any((s) => s.id == id)) return id;
+      return c.servers.first.id;
+    }
+
+    final wantCC = _freePool.toUpperCase();
+
+    if (wantCC.isNotEmpty) {
       for (final s in c.servers) {
-        if (s.countryCode.toUpperCase() == deviceCountry) {
-          return s.id;
-        }
+        if (_isAwgNode(s) || _isHysteriaNode(s)) continue;
+        if (s.countryCode.toUpperCase() == wantCC) return s.id;
       }
     }
 
     for (final s in c.servers) {
-      if (s.countryCode.toUpperCase() == "US") return s.id;
+      if (!_isAwgNode(s) && !_isHysteriaNode(s)) return s.id;
     }
 
-    return c.servers.isNotEmpty ? c.servers.first.id : c.selectedServerId;
+    return c.servers.first.id;
   }
 
   Future<void> _openPrivacyPolicy() async {
@@ -1181,13 +1210,20 @@ class _FullVpnModeScreenState extends State<FullVpnModeScreen>
                             final ip = _ipv4Only(c.uiIp);
                             final l10n = AppLocalizations.of(context)!;
 
+                            final srv = c.selectedServer;
+                            final locationName = (srv.city?.isNotEmpty == true)
+                                ? srv.city!
+                                : (srv.countryCode.isNotEmpty
+                                ? _countryName(srv.countryCode)
+                                : country);
+
                             final topLine = c.connectingUi
                                 ? (c.connected
                                 ? "Securing connection..."
                                 : l10n.vpnStatusConnectingEllipsis)
                                 : (c.connected
-                                ? (country.isNotEmpty
-                                ? l10n.vpnStatusConnectedTo(country)
+                                ? (locationName.isNotEmpty
+                                ? l10n.vpnStatusConnectedTo(locationName)
                                 : l10n.vpnStatusConnected)
                                 : l10n.vpnTitleSecure);
 

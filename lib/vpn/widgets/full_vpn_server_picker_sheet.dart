@@ -430,20 +430,22 @@ class _FullVpnServerPickerSheetState extends State<FullVpnServerPickerSheet> {
                           ),
                         ),
                       ),
-                      const SizedBox(width: 8),
-                      Flexible(
-                        child: Text(
-                          s.label,
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          style: theme.textTheme.bodyMedium?.copyWith(
-                            color: unlocked
-                                ? scheme.onSurfaceVariant.withValues(alpha: 0.92)
-                                : scheme.onSurfaceVariant.withValues(alpha: 0.72),
-                            fontWeight: FontWeight.w600,
+                      if (s.city != null && s.city!.isNotEmpty) ...[
+                        const SizedBox(width: 8),
+                        Flexible(
+                          child: Text(
+                            s.city!,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: theme.textTheme.bodyMedium?.copyWith(
+                              color: unlocked
+                                  ? scheme.onSurfaceVariant.withValues(alpha: 0.92)
+                                  : scheme.onSurfaceVariant.withValues(alpha: 0.72),
+                              fontWeight: FontWeight.w600,
+                            ),
                           ),
                         ),
-                      ),
+                      ],
                     ],
                   ),
                 ),

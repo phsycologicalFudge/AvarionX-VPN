@@ -25,6 +25,30 @@ class FullVpnServerSelectorChip extends StatelessWidget {
     return null;
   }
 
+  String _displayName(FullVpnServerLocation s) {
+    final city = s.city?.trim() ?? "";
+    if (city.isNotEmpty) return city;
+    return _countryName(s.countryCode);
+  }
+
+  String _countryName(String code) {
+    switch (code.toUpperCase()) {
+      case "US": return "United States";
+      case "GB": return "United Kingdom";
+      case "JP": return "Japan";
+      case "DE": return "Germany";
+      case "SG": return "Singapore";
+      case "FI": return "Finland";
+      case "FR": return "France";
+      case "CA": return "Canada";
+      case "PL": return "Poland";
+      case "NL": return "Netherlands";
+      case "AU": return "Australia";
+      case "ES": return "Spain";
+      default: return code.toUpperCase();
+    }
+  }
+
   Color _modeBg() {
     if (currentModeLabel == "Stealth+") {
       return const Color(0xFF7C3AED).withValues(alpha: 0.18);
@@ -59,9 +83,8 @@ class FullVpnServerSelectorChip extends StatelessWidget {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final scheme = theme.colorScheme;
-    final selected = _findSelected();
 
-    if (selected == null) {
+    if (servers.isEmpty) {
       return Container(
         width: double.infinity,
         padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
@@ -72,17 +95,32 @@ class FullVpnServerSelectorChip extends StatelessWidget {
             color: scheme.outlineVariant.withValues(alpha: 0.18),
           ),
         ),
-        child: Text(
-          "No servers",
-          style: theme.textTheme.bodyMedium?.copyWith(
-            fontWeight: FontWeight.w700,
-            color: scheme.onSurfaceVariant,
-          ),
+        child: Row(
+          children: [
+            SizedBox(
+              width: 14,
+              height: 14,
+              child: CircularProgressIndicator(
+                strokeWidth: 2,
+                color: scheme.onSurfaceVariant.withValues(alpha: 0.5),
+              ),
+            ),
+            const SizedBox(width: 10),
+            Text(
+              "Loading servers...",
+              style: theme.textTheme.bodyMedium?.copyWith(
+                fontWeight: FontWeight.w700,
+                color: scheme.onSurfaceVariant,
+              ),
+            ),
+          ],
         ),
       );
     }
 
+    final selected = _findSelected() ?? servers.first;
     final countryCode = selected.countryCode.toUpperCase();
+    final displayName = _displayName(selected);
 
     return Material(
       color: Colors.transparent,
@@ -129,7 +167,7 @@ class FullVpnServerSelectorChip extends StatelessWidget {
                   const SizedBox(width: 12),
                   Expanded(
                     child: Text(
-                      selected.label,
+                      displayName,
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
                       style: theme.textTheme.titleMedium?.copyWith(

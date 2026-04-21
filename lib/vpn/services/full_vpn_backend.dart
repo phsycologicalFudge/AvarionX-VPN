@@ -9,6 +9,7 @@ import 'package:cryptography/cryptography.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 import 'package:http/http.dart' as http;
+import 'package:latlong2/latlong.dart';
 import 'package:permission_handler/permission_handler.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:url_launcher/url_launcher.dart';
@@ -32,6 +33,8 @@ class FullVpnController extends ChangeNotifier {
   static const kDnsBlocklistsJson = "cs_dns_blocklists_json";
   static const kWgConfigLast = "cs_wg_config_last";
   static const kSelectedServerId = "cs_vpn_selected_region";
+  static const kLocationsVersion = "cs_vpn_locations_version";
+  static const kLocationsJson = "cs_vpn_locations_json";
   static const kLastLat = "cs_vpn_last_lat";
   static const kLastLon = "cs_vpn_last_lon";
   static const kAnonymousDeviceKeyFallback = "cs_anonymous_device_key_fallback";
@@ -53,10 +56,15 @@ class FullVpnController extends ChangeNotifier {
   Timer? _serverStatusTimer;
   Timer? _probeTimer;
   Timer? _statsTimer;
+  Timer? _locationsTimer;
   final VpnSoundController soundController = VpnSoundController();
 
   Map<String, dynamic> _serverStatusByRegion = {};
   bool _serverStatusEverLoaded = false;
+
+  List<FullVpnServerLocation> _servers = [];
+  String _locationsVersion = "";
+  bool _locationsEverLoaded = false;
 
   bool _busy = false;
   String _status = "";
@@ -138,12 +146,21 @@ class FullVpnController extends ChangeNotifier {
   double get downloadSpeedBps => _downloadSpeedBps;
   double get uploadSpeedBps => _uploadSpeedBps;
 
-  List<FullVpnServerLocation> get servers => kFullVpnServers;
+  List<FullVpnServerLocation> get servers => _servers;
+  bool get locationsEverLoaded => _locationsEverLoaded;
 
   FullVpnServerLocation get selectedServer {
-    return servers.firstWhere(
+    if (_servers.isEmpty) {
+      return const FullVpnServerLocation(
+        id: "",
+        label: "",
+        countryCode: "",
+        point: LatLng(0, 0),
+      );
+    }
+    return _servers.firstWhere(
           (s) => s.id == _selectedServerId,
-      orElse: () => servers.first,
+      orElse: () => _servers.first,
     );
   }
 
@@ -153,12 +170,13 @@ class FullVpnController extends ChangeNotifier {
   }
 
   FullVpnServerLocation get _defaultFreeServer {
-    return servers.firstWhere(
+    if (_servers.isEmpty) return selectedServer;
+    return _servers.firstWhere(
           (s) {
         final id = s.id.toLowerCase();
         return !id.startsWith("awg-") && !id.startsWith("hy-");
       },
-      orElse: () => servers.first,
+      orElse: () => _servers.first,
     );
   }
 
@@ -175,29 +193,14 @@ class FullVpnController extends ChangeNotifier {
   String get selectedServerCountryCode => selectedServer.countryCode;
 
   String get selectedRegionKey {
-    final id = effectiveConnectServer.id.toLowerCase();
-    final parts = id.split("-").where((e) => e.isNotEmpty).toList();
-
-    if (parts.length >= 2 && (parts.first == "awg" || parts.first == "hy")) {
-      return "${parts[0]}-${parts[1]}";
-    }
-
-    return parts.isNotEmpty ? parts.first : id;
+    return effectiveConnectServer.id.toLowerCase();
   }
 
   String get _selectedProvisionRegion {
     if (!hasPremiumAccess) {
       return "de";
     }
-
-    final id = effectiveConnectServer.id.toLowerCase();
-    final parts = id.split("-").where((e) => e.isNotEmpty).toList();
-
-    if (parts.length >= 2 && (parts.first == "awg" || parts.first == "hy")) {
-      return "${parts[0]}-${parts[1]}";
-    }
-
-    return parts.isNotEmpty ? parts.first : id;
+    return effectiveConnectServer.id.toLowerCase();
   }
 
   int? get selectedServerConnectedNow {
@@ -321,6 +324,8 @@ class FullVpnController extends ChangeNotifier {
   Future<void> fetchUsage({bool showSync = true}) =>
       _fetchUsageImpl(showSync: showSync);
 
+  Future<void> fetchLocations() => _fetchLocationsImpl();
+
   Future<void> setVpnTransport(String value) => _setVpnTransportImpl(value);
 
   Future<void> setShowFlagMarkers(bool value) async {
@@ -332,6 +337,7 @@ class FullVpnController extends ChangeNotifier {
 
   Future<void> init() async {
     await soundController.init();
+    await _loadCachedLocations();
     await _loadBlocklists();
     await _loadSelectedServer();
     await _loadVpnTransport();
@@ -340,6 +346,8 @@ class FullVpnController extends ChangeNotifier {
     await _loadLastLocation();
     await _syncWithRuntime();
     _startRuntimeSync();
+    unawaited(fetchLocations());
+    _startLocationsPolling();
 
     if (_token.isEmpty) {
       await PurchaseService.clearServerAccountEntitlement();
@@ -369,6 +377,8 @@ class FullVpnController extends ChangeNotifier {
   Future<void> onResumed() async {
     await _syncWithRuntime();
     await _loadToken();
+    unawaited(fetchLocations());
+    if (_locationsTimer == null) _startLocationsPolling();
 
     if (_token.isEmpty) {
       await PurchaseService.clearServerAccountEntitlement();
@@ -677,6 +687,7 @@ class FullVpnController extends ChangeNotifier {
     _serverStatusTimer?.cancel();
     _probeTimer?.cancel();
     _statsTimer?.cancel();
+    _locationsTimer?.cancel();
     soundController.dispose();
     super.dispose();
   }
@@ -685,6 +696,81 @@ class FullVpnController extends ChangeNotifier {
   void notifyListeners() {
     if (_disposed) return;
     super.notifyListeners();
+  }
+
+  Future<void> _fetchLocationsImpl() async {
+    if (_disposed) return;
+    try {
+      final res = await http
+          .get(Uri.parse("$apiBase/vpn/locations"))
+          .timeout(const Duration(seconds: 10));
+
+      if (res.statusCode != 200) return;
+
+      final j = jsonDecode(res.body) as Map<String, dynamic>;
+      final version = (j["version"] ?? "").toString();
+      final list = j["locations"];
+      if (list is! List) return;
+
+      if (version.isNotEmpty && version == _locationsVersion) return;
+
+      final parsed = <FullVpnServerLocation>[];
+      for (final item in list) {
+        if (item is! Map<String, dynamic>) continue;
+        final loc = FullVpnServerLocation.fromJson(item);
+        if (loc.id.isEmpty) continue;
+        parsed.add(loc);
+      }
+
+      if (parsed.isEmpty) return;
+
+      _servers = parsed;
+      _locationsVersion = version;
+      _locationsEverLoaded = true;
+
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setString(kLocationsVersion, version);
+      await prefs.setString(kLocationsJson, jsonEncode(list));
+
+      notifyListeners();
+    } catch (_) {}
+  }
+
+  Future<void> _loadCachedLocations() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final cached = prefs.getString(kLocationsJson);
+      if (cached == null || cached.isEmpty) return;
+      final list = jsonDecode(cached);
+      if (list is! List) return;
+      final parsed = <FullVpnServerLocation>[];
+      for (final item in list) {
+        if (item is! Map<String, dynamic>) continue;
+        final loc = FullVpnServerLocation.fromJson(item);
+        if (loc.id.isEmpty) continue;
+        parsed.add(loc);
+      }
+      if (parsed.isEmpty) return;
+      _servers = parsed;
+      _locationsVersion = prefs.getString(kLocationsVersion) ?? "";
+      _locationsEverLoaded = true;
+    } catch (_) {}
+  }
+
+  void _startLocationsPolling() {
+    _locationsTimer?.cancel();
+    _locationsTimer = Timer.periodic(
+      const Duration(hours: 1),
+          (_) async {
+        if (_disposed) return;
+        await fetchLocations();
+      },
+    );
+  }
+
+  void _stopLocationsPolling() {
+    _locationsTimer?.cancel();
+    _locationsTimer = null;
   }
 
   Future<void> _connectInternal() async {
