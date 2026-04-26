@@ -1,8 +1,10 @@
 import 'package:colourswift_av/vpn/services/full_vpn_backend.dart';
 import 'package:flutter/material.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import '../../../translations/app_localizations.dart';
+import '../services/prefs/blocklist_prefs.dart';
 
-class FullVpnCustomisationScreen extends StatelessWidget {
+class FullVpnCustomisationScreen extends StatefulWidget {
   final FullVpnController c;
   final bool hasProEntitlement;
   final Future<void> Function() onRequireSignIn;
@@ -15,21 +17,89 @@ class FullVpnCustomisationScreen extends StatelessWidget {
   });
 
   @override
+  State<FullVpnCustomisationScreen> createState() => _FullVpnCustomisationScreenState();
+}
+
+class _FullVpnCustomisationScreenState extends State<FullVpnCustomisationScreen> {
+  bool _prefsLoaded = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadFromSharedPrefs();
+  }
+
+  Future<void> _loadFromSharedPrefs() async {
+    final stored = await BlocklistPrefs.load();
+    final m = widget.c.blocklists;
+    if (m is Map<String, bool>) {
+      for (final entry in stored.entries) {
+        m[entry.key] = entry.value;
+      }
+      widget.c.notifyListeners();
+    }
+    if (!mounted) return;
+    setState(() => _prefsLoaded = true);
+  }
+
+  Future<void> _toggle(String key, bool value) async {
+    final m = widget.c.blocklists;
+    if (m is! Map<String, bool>) return;
+
+    final writes = <String, bool>{key: value};
+    if (value) {
+      if (key == 'romain')  writes['malware'] = false;
+      if (key == 'malware') writes['romain']  = false;
+      if (key == 'oisd')    writes['ads']     = false;
+      if (key == 'ads')     writes['oisd']    = false;
+    }
+
+    for (final entry in writes.entries) {
+      m[entry.key] = entry.value;
+      await BlocklistPrefs.set(entry.key, entry.value);
+    }
+
+    await widget.c.persistBlocklists();
+    widget.c.notifyListeners();
+    setState(() {});
+  }
+
+  @override
+  Widget build(BuildContext context) => _FullVpnCustomisationView(
+    c: widget.c,
+    hasProEntitlement: widget.hasProEntitlement,
+    onRequireSignIn: widget.onRequireSignIn,
+    onToggle: _toggle,
+    prefsLoaded: _prefsLoaded,
+  );
+}
+
+class _FullVpnCustomisationView extends StatelessWidget {
+  final FullVpnController c;
+  final bool hasProEntitlement;
+  final Future<void> Function() onRequireSignIn;
+  final Future<void> Function(String key, bool value) onToggle;
+  final bool prefsLoaded;
+
+  const _FullVpnCustomisationView({
+    required this.c,
+    required this.hasProEntitlement,
+    required this.onRequireSignIn,
+    required this.onToggle,
+    required this.prefsLoaded,
+  });
+
+  @override
   Widget build(BuildContext context) {
+    if (!prefsLoaded) {
+      return const Center(child: CircularProgressIndicator());
+    }
+
     final l10n = AppLocalizations.of(context)!;
     final theme = Theme.of(context);
     final scheme = theme.colorScheme;
     const pro = true;
     final entries = c.blocklists.entries.toList();
-
-    bool isMalwareKey(String k) {
-      final s = k.toLowerCase().trim();
-      if (s == "malware") return true;
-      if (s.contains("malware")) return true;
-      if (s.contains("threat")) return true;
-      if (s.contains("phishing")) return true;
-      return false;
-    }
 
     String prettyName(String key) {
       switch (key.toLowerCase().trim()) {
@@ -47,6 +117,10 @@ class FullVpnCustomisationScreen extends StatelessWidget {
           return "Social Media";
         case "crypto":
           return "Crypto";
+        case "romain":
+          return "Colourswift Malware";
+        case "oisd":
+          return "Colourswift Ads";
         default:
           final parts = key.split(RegExp(r"[_\\s-]+"));
           return parts
@@ -72,92 +146,41 @@ class FullVpnCustomisationScreen extends StatelessWidget {
           return "Blocks major social media and related platform domains.";
         case "crypto":
           return "Blocks crypto mining, exchange and related domains.";
+        case "romain":
+          return "Curated malware and threat list maintained by Colourswift.";
+        case "oisd":
+          return "Curated ads and tracker list maintained by Colourswift.";
         default:
           return "Blocks domains in this category at network level.";
       }
     }
 
-    final malware = <MapEntry<String, bool>>[];
-    final premium = <MapEntry<String, bool>>[];
+    const colourswiftKeys = {'romain', 'oisd'};
+    const categoryOrder = ['malware', 'ads', 'trackers', 'adult', 'gambling', 'social', 'crypto'];
+
+    final colourswift = <MapEntry<String, bool>>[];
+    final categories  = <MapEntry<String, bool>>[];
 
     for (final e in entries) {
-      if (isMalwareKey(e.key)) {
-        malware.add(e);
+      if (colourswiftKeys.contains(e.key)) {
+        colourswift.add(e);
       } else {
-        premium.add(e);
+        categories.add(e);
       }
     }
 
-    malware.sort((a, b) => prettyName(a.key).compareTo(prettyName(b.key)));
-    premium.sort((a, b) => prettyName(a.key).compareTo(prettyName(b.key)));
+    colourswift.sort((a, b) => a.key == 'romain' ? -1 : 1);
+    categories.sort((a, b) {
+      final ai = categoryOrder.indexOf(a.key);
+      final bi = categoryOrder.indexOf(b.key);
+      if (ai == -1 && bi == -1) return prettyName(a.key).compareTo(prettyName(b.key));
+      if (ai == -1) return 1;
+      if (bi == -1) return -1;
+      return ai.compareTo(bi);
+    });
 
-    Widget sectionBadge({
-      required bool active,
-      required String text,
-    }) {
-      return Container(
-        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
-        decoration: BoxDecoration(
-          color: active
-              ? const Color(0xFF1B7F4B).withValues(alpha: 0.16)
-              : const Color(0xFFB8860B).withValues(alpha: 0.16),
-          borderRadius: BorderRadius.circular(999),
-          border: Border.all(
-            color: active
-                ? const Color(0xFF1B7F4B).withValues(alpha: 0.28)
-                : const Color(0xFFB8860B).withValues(alpha: 0.28),
-          ),
-        ),
-        child: Text(
-          text,
-          style: theme.textTheme.labelSmall?.copyWith(
-            color: active ? const Color(0xFFBFF7D4) : const Color(0xFFFFE7A3),
-            fontWeight: FontWeight.w800,
-            fontSize: 11,
-            letterSpacing: 0.1,
-          ),
-        ),
-      );
-    }
 
-    Widget sectionHeader({
-      required String title,
-      required String body,
-      Widget? trailing,
-    }) {
-      return Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  title,
-                  style: theme.textTheme.titleMedium?.copyWith(
-                    fontWeight: FontWeight.w900,
-                    color: scheme.onSurface,
-                  ),
-                ),
-                const SizedBox(height: 4),
-                Text(
-                  body,
-                  style: theme.textTheme.bodySmall?.copyWith(
-                    color: scheme.onSurfaceVariant,
-                    height: 1.35,
-                    fontWeight: FontWeight.w600,
-                  ),
-                ),
-              ],
-            ),
-          ),
-          if (trailing != null) ...[
-            const SizedBox(width: 12),
-            trailing,
-          ],
-        ],
-      );
-    }
+
 
     Widget tile(
         MapEntry<String, bool> e, {
@@ -212,14 +235,7 @@ class FullVpnCustomisationScreen extends StatelessWidget {
                       value: value,
                       onChanged: !enabled
                           ? null
-                          : (v) async {
-                        final m = c.blocklists;
-                        if (m is Map<String, bool>) {
-                          m[e.key] = v;
-                          await c.persistBlocklists();
-                          c.notifyListeners();
-                        }
-                      },
+                          : (v) => onToggle(e.key, v),
                     ),
                   ),
                 ],
@@ -236,32 +252,25 @@ class FullVpnCustomisationScreen extends StatelessWidget {
       );
     }
 
-    Widget sectionCard({
-      required Widget header,
-      required List<Widget> children,
-      Color? tint,
-    }) {
-      return Container(
-        decoration: BoxDecoration(
-          color: tint ?? scheme.surfaceContainerHighest.withValues(alpha: 0.16),
-          borderRadius: BorderRadius.circular(22),
-          border: Border.all(
-            color: scheme.outlineVariant.withValues(alpha: 0.18),
-          ),
+
+
+
+    Widget sectionLabel(String label) => Padding(
+      padding: const EdgeInsets.only(top: 4, bottom: 10),
+      child: Text(
+        label,
+        style: theme.textTheme.labelMedium?.copyWith(
+          color: scheme.onSurfaceVariant,
+          fontWeight: FontWeight.w700,
+          letterSpacing: 0.3,
         ),
-        child: Padding(
-          padding: const EdgeInsets.fromLTRB(16, 16, 16, 4),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              header,
-              const SizedBox(height: 14),
-              ...children,
-            ],
-          ),
-        ),
-      );
-    }
+      ),
+    );
+
+    Widget sectionDivider() => Padding(
+      padding: const EdgeInsets.symmetric(vertical: 8),
+      child: Divider(height: 1, thickness: 1, color: scheme.outlineVariant.withValues(alpha: 0.2)),
+    );
 
     return ListView(
       padding: const EdgeInsets.fromLTRB(16, 14, 16, 90),
@@ -283,39 +292,34 @@ class FullVpnCustomisationScreen extends StatelessWidget {
           ),
         ),
         const SizedBox(height: 18),
-        sectionCard(
-          tint: scheme.primaryContainer.withValues(alpha: 0.10),
-          header: sectionHeader(
-            title: "Essential Protection",
-            body: "This core security filter is designed to block harmful domains and common threats.",
-          ),
-          children: List.generate(
-            malware.length,
+
+        if (colourswift.isNotEmpty) ...[
+          sectionLabel('COLOURSWIFT'),
+          ...List.generate(
+            colourswift.length,
                 (i) => tile(
-              malware[i],
+              colourswift[i],
               enabled: true,
               forceOff: false,
-              showDivider: i != malware.length - 1,
+              showDivider: i != colourswift.length - 1,
             ),
           ),
-        ),
-        const SizedBox(height: 16),
-        sectionCard(
-          tint: scheme.surfaceContainerHighest.withValues(alpha: 0.22),
-          header: sectionHeader(
-            title: "Extra Filters",
-            body: "Extra categories for stronger control over browsing, ads and trackers.",
-          ),
-          children: List.generate(
-            premium.length,
+          sectionDivider(),
+        ],
+
+        if (categories.isNotEmpty) ...[
+          sectionLabel('CATEGORIES'),
+          ...List.generate(
+            categories.length,
                 (i) => tile(
-              premium[i],
-              enabled: pro,
-              forceOff: !pro,
-              showDivider: i != premium.length - 1,
+              categories[i],
+              enabled: true,
+              forceOff: false,
+              showDivider: i != categories.length - 1,
             ),
           ),
-        ),
+        ],
+
         const SizedBox(height: 20),
         SizedBox(
           width: double.infinity,

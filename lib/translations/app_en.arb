@@ -805,7 +805,7 @@
   "networkDnsOffInfoTitle": "What is DNS filtering?",
   "networkDnsOffInfoBody1": "DNS filtering is separate from Secure VPN. It can block known malware, ads across apps, trackers, and unwanted categories before they load.",
   "networkDnsOffInfoBody2": "It does not encrypt your traffic or hide your IP.",
-  "networkDnsOffEnableButton": "Enable DNS Filtering",
+  "networkDnsOffEnableButton": "Enable DNS filtering (using vpn)",
   "vpnAccountServerConnectedCountWithLabel": "{connected}/{cap} connected",
   "@vpnAccountServerConnectedCountWithLabel": {
     "placeholders": {

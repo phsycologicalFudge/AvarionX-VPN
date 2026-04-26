@@ -2,6 +2,8 @@ import 'dart:async';
 import 'dart:math' as math;
 import 'dart:typed_data';
 import 'dart:ui' as ui;
+import 'package:colourswift_av/vpn/services/twoDmapLighting/D/N_cycle.dart';
+
 import 'full_vpn_server_locations.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
@@ -10,6 +12,10 @@ import 'package:flutter_map_tile_caching/flutter_map_tile_caching.dart';
 import 'package:latlong2/latlong.dart';
 
 import 'animated_connecting_route_layer.dart';
+
+const _displayPointOverrides = <String, LatLng>{
+  'uk': LatLng(51.5074, -0.1278),
+};
 
 class FullVpnLocationMapCard extends StatefulWidget {
   final double? lat;
@@ -71,15 +77,15 @@ class _FullVpnLocationMapCardState extends State<FullVpnLocationMapCard>
   );
 
   bool _focusQueued = false;
-
+  double _devicePixelRatio = 1.0;
   int _lastMoveMs = 0;
   LatLng? _lastMovedCenter;
   double _lastMovedZoom = -1;
-
+  double _mapZoom = 2.0;
   String? _previewSelectedId;
-
   bool _userTouching = false;
   int _userTouchBlockUntilMs = 0;
+  bool _forcedFocus = false;
 
   bool get _hasIpPoint {
     final la = widget.lat;
@@ -90,7 +96,6 @@ class _FullVpnLocationMapCardState extends State<FullVpnLocationMapCard>
   }
 
   LatLng _fallbackCenter() => const LatLng(20, 0);
-
   LatLng _ipCenter() => LatLng(widget.lat!, widget.lon!);
 
   String? get _effectiveSelectedId {
@@ -112,12 +117,9 @@ class _FullVpnLocationMapCardState extends State<FullVpnLocationMapCard>
 
   FullVpnServerLocation? _nearestServer(LatLng p) {
     if (widget.servers.isEmpty) return null;
-
     const d = Distance();
-
     FullVpnServerLocation? best;
     double bestM = double.infinity;
-
     for (final s in widget.servers) {
       final m = d(p, s.point);
       if (m < bestM) {
@@ -125,75 +127,77 @@ class _FullVpnLocationMapCardState extends State<FullVpnLocationMapCard>
         best = s;
       }
     }
-
     if (bestM <= 220000) return best;
     return null;
   }
 
   LatLng _midpoint(LatLng a, LatLng b) {
-    return LatLng(
-      (a.latitude + b.latitude) / 2.0,
-      (a.longitude + b.longitude) / 2.0,
-    );
+    final lat = (a.latitude + b.latitude) / 2.0;
+    var diff = (b.longitude - a.longitude + 540.0) % 360.0 - 180.0;
+    var lon = a.longitude + diff / 2.0;
+    if (lon > 180.0) lon -= 360.0;
+    if (lon < -180.0) lon += 360.0;
+    return LatLng(lat, lon);
+  }
+
+  static const double _panelOffsetPx = 220.0;
+
+  LatLng _applyPanelOffset(LatLng center, double zoom) {
+    final latRad = center.latitude * math.pi / 180.0;
+    final metersPerPx = (156543.03392 * math.cos(latRad)) / math.pow(2, zoom);
+    const earthCircumference = 2 * math.pi * 6378137.0;
+    final degreesPerPx = metersPerPx * (360.0 / earthCircumference);
+    final latShift = _panelOffsetPx * degreesPerPx;
+    final newLat = (center.latitude - latShift).clamp(-85.0, 85.0);
+    return LatLng(newLat, center.longitude);
   }
 
   LatLng _focusCenter() {
     final s = _selectedServer();
-
-    if (!widget.connected && s != null) return s.point;
-
-    if (widget.isConnecting && _hasIpPoint && s != null) {
-      return _midpoint(_ipCenter(), s.point);
+    final zoom = _focusZoom();
+    LatLng raw;
+    if (!widget.connected && s != null) {
+      raw = s.point;
+    } else if (widget.isConnecting && _hasIpPoint && s != null) {
+      raw = _midpoint(_ipCenter(), s.point);
+    } else if (widget.connected && s != null) {
+      raw = s.point;
+    } else if (_hasIpPoint) {
+      raw = _ipCenter();
+    } else {
+      raw = _fallbackCenter();
     }
-
-    if (widget.connected && s != null) return s.point;
-
-    if (_hasIpPoint) return _ipCenter();
-
-    return _fallbackCenter();
+    return _applyPanelOffset(raw, zoom);
   }
 
   double _focusZoom() {
     final s = _selectedServer();
-
     if (!widget.connected && s != null) return 4.8;
-
     if (widget.isConnecting && _hasIpPoint && s != null) return 2.8;
-
     if (widget.connected && s != null) return 5.6;
-
     if (_hasIpPoint) return 3.4;
-
     return 1.6;
   }
 
   @override
   void initState() {
     super.initState();
-
+    _mapZoom = _clampZoom(_focusZoom());
     _mapController = MapController();
-
     _pulseCtrl = AnimationController(
       vsync: this,
       duration: const Duration(milliseconds: 1400),
     )..repeat();
-
     _focusCtrl = AnimationController(
       vsync: this,
       duration: const Duration(milliseconds: 650),
     )..addListener(_tickFocus);
-
     _tileStore = const FMTCStore('cs_dark_cartodb');
-
     _tileProvider = FMTCTileProvider(
-      stores: const {
-        'cs_dark_cartodb': BrowseStoreStrategy.readUpdateCreate,
-      },
+      stores: const {'cs_dark_cartodb': BrowseStoreStrategy.readUpdateCreate},
       loadingStrategy: BrowseLoadingStrategy.cacheFirst,
     );
-
     _initTileStore();
-
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
       _queueFocus(force: true);
@@ -204,12 +208,16 @@ class _FullVpnLocationMapCardState extends State<FullVpnLocationMapCard>
   Future<void> _initTileStore() async {
     try {
       final ready = await _tileStore.manage.ready;
-      if (!ready) {
-        await _tileStore.manage.create();
-      }
+      if (!ready) await _tileStore.manage.create();
     } catch (_) {}
     if (!mounted) return;
     setState(() => _tileStoreReady = true);
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    _devicePixelRatio = MediaQuery.of(context).devicePixelRatio;
   }
 
   @override
@@ -231,15 +239,8 @@ class _FullVpnLocationMapCardState extends State<FullVpnLocationMapCard>
   }
 
   LatLng _clampCenterToWorld(LatLng c) {
-    double lat = c.latitude;
-    double lon = c.longitude;
-
-    if (lat < -85.0) lat = -85.0;
-    if (lat > 85.0) lat = 85.0;
-
-    if (lon < -180.0) lon = -180.0;
-    if (lon > 180.0) lon = 180.0;
-
+    final lat = c.latitude.clamp(-85.0, 85.0);
+    final lon = c.longitude.clamp(-180.0, 180.0);
     return LatLng(lat, lon);
   }
 
@@ -262,38 +263,28 @@ class _FullVpnLocationMapCardState extends State<FullVpnLocationMapCard>
 
   void _tickFocus() {
     if (_fromCenter == null || _toCenter == null) return;
-    if (_userInteractionBlocked()) return;
-
+    if (!_forcedFocus && _userInteractionBlocked()) return;
     final nowMs = DateTime.now().millisecondsSinceEpoch;
     if (nowMs - _lastMoveMs < 16) return;
-
     final t = Curves.easeInOutCubic.transform(_focusCtrl.value);
-
     final lat = _lerp(_fromCenter!.latitude, _toCenter!.latitude, t);
     final lon = _lerp(_fromCenter!.longitude, _toCenter!.longitude, t);
     final z = _clampZoom(_lerp(_fromZoom, _toZoom, t));
-
     final nextCenter = _safeCenter(LatLng(lat, lon));
-
     final lastC = _lastMovedCenter;
     final lastZ = _lastMovedZoom;
-
     if (lastC != null) {
-      if (_closeEnough(lastC, nextCenter) && (lastZ - z).abs() < 0.002) {
-        return;
-      }
+      if (_closeEnough(lastC, nextCenter) && (lastZ - z).abs() < 0.002) return;
     }
-
     _lastMoveMs = nowMs;
     _lastMovedCenter = nextCenter;
     _lastMovedZoom = z;
-
-    _mapController.move(nextCenter, z);
+    try { _mapController.move(nextCenter, z); } catch (_) {}
+    if (_focusCtrl.isCompleted) _forcedFocus = false;
   }
 
   void _queueFocus({bool force = false}) {
     if (!force && _userInteractionBlocked()) return;
-
     if (_focusQueued) return;
     _focusQueued = true;
     WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -305,23 +296,23 @@ class _FullVpnLocationMapCardState extends State<FullVpnLocationMapCard>
 
   void _animateFocus({bool force = false}) {
     if (!force && _userInteractionBlocked()) return;
-
     final toC = _safeCenter(_focusCenter());
     final toZ = _clampZoom(_focusZoom());
-
-    final cam = _mapController.camera;
-
+    MapCamera cam;
+    try {
+      cam = _mapController.camera;
+    } catch (_) {
+      return;
+    }
     final fromC = _safeCenter(cam.center);
     final fromZ = _clampZoom(cam.zoom);
-
     if (_closeEnough(fromC, toC) && (fromZ - toZ).abs() < 0.002) return;
-
     _fromCenter = fromC;
     _toCenter = toC;
     _fromZoom = fromZ;
     _toZoom = toZ;
-
     _lastMoveMs = 0;
+    _forcedFocus = force;
     _focusCtrl.stop();
     _focusCtrl.value = 0;
     _focusCtrl.forward();
@@ -329,8 +320,11 @@ class _FullVpnLocationMapCardState extends State<FullVpnLocationMapCard>
 
   void _zoomBy(double delta) {
     final cam = _mapController.camera;
-    final z = _clampZoom(cam.zoom + delta);
-    _mapController.move(cam.center, z);
+    final zoom = _clampZoom(cam.zoom + delta);
+    _mapController.move(cam.center, zoom);
+    if ((_mapZoom - zoom).abs() > 0.05) {
+      setState(() => _mapZoom = zoom);
+    }
   }
 
   void _recenter() {
@@ -344,7 +338,7 @@ class _FullVpnLocationMapCardState extends State<FullVpnLocationMapCard>
 
     Widget btn(IconData icon, VoidCallback onTap) {
       return Material(
-        color: Colors.black.withOpacity(0.55),
+        color: const Color(0xFF0B2545).withOpacity(0.78),
         borderRadius: BorderRadius.circular(14),
         child: InkWell(
           borderRadius: BorderRadius.circular(14),
@@ -377,49 +371,27 @@ class _FullVpnLocationMapCardState extends State<FullVpnLocationMapCard>
 
   Future<void> _captureSnapshotForABit({required int msVisible}) async {
     if (!mounted) return;
-
     final now = DateTime.now().millisecondsSinceEpoch;
     if (now - _lastSnapshotMs < 500) return;
     if (_snapshotInFlight) return;
-
     _snapshotInFlight = true;
     _lastSnapshotMs = now;
-
     try {
       final ctx = _mapRepaintKey.currentContext;
-      if (ctx == null) {
-        _snapshotInFlight = false;
-        return;
-      }
-
+      if (ctx == null) { _snapshotInFlight = false; return; }
       final ro = ctx.findRenderObject();
-      if (ro is! RenderRepaintBoundary) {
-        _snapshotInFlight = false;
-        return;
-      }
-
-      final img = await ro.toImage(pixelRatio: ui.window.devicePixelRatio);
+      if (ro is! RenderRepaintBoundary) { _snapshotInFlight = false; return; }
+      final img = await ro.toImage(pixelRatio: _devicePixelRatio);
       final bd = await img.toByteData(format: ui.ImageByteFormat.png);
       img.dispose();
-
-      if (bd == null || !mounted) {
-        _snapshotInFlight = false;
-        return;
-      }
-
+      if (bd == null || !mounted) { _snapshotInFlight = false; return; }
       final bytes = bd.buffer.asUint8List();
-      if (bytes.isEmpty) {
-        _snapshotInFlight = false;
-        return;
-      }
-
+      if (bytes.isEmpty) { _snapshotInFlight = false; return; }
       setState(() {
         _snapshotPng = bytes;
         _snapshotVisible = msVisible > 0;
       });
-
       _snapshotTimer?.cancel();
-
       if (msVisible > 0) {
         _snapshotTimer = Timer(Duration(milliseconds: msVisible), () {
           if (!mounted) return;
@@ -431,12 +403,7 @@ class _FullVpnLocationMapCardState extends State<FullVpnLocationMapCard>
         });
       }
     } catch (_) {
-      if (mounted) {
-        setState(() {
-          _snapshotVisible = false;
-          _snapshotPng = null;
-        });
-      }
+      if (mounted) setState(() { _snapshotVisible = false; _snapshotPng = null; });
     } finally {
       _snapshotInFlight = false;
     }
@@ -445,7 +412,6 @@ class _FullVpnLocationMapCardState extends State<FullVpnLocationMapCard>
   @override
   void didUpdateWidget(covariant FullVpnLocationMapCard oldWidget) {
     super.didUpdateWidget(oldWidget);
-
     final parentSelectedChanged = oldWidget.selectedServerId != widget.selectedServerId;
     if (parentSelectedChanged) {
       _previewSelectedId = null;
@@ -456,19 +422,12 @@ class _FullVpnLocationMapCardState extends State<FullVpnLocationMapCard>
         if (!stillExists) _previewSelectedId = null;
       }
     }
-
     final latChanged = _changedDouble(oldWidget.lat, widget.lat);
     final lonChanged = _changedDouble(oldWidget.lon, widget.lon);
     final connChanged = oldWidget.connected != widget.connected;
     final connectingChanged = oldWidget.isConnecting != widget.isConnecting;
-
-    if (connChanged || connectingChanged) {
-      _captureSnapshotForABit(msVisible: 2400);
-    }
-
-    if (latChanged || lonChanged || parentSelectedChanged) {
-      _queueFocus(force: parentSelectedChanged);
-    }
+    if (connChanged || connectingChanged) _captureSnapshotForABit(msVisible: 2400);
+    if (latChanged || lonChanged || parentSelectedChanged) _queueFocus(force: parentSelectedChanged);
   }
 
   void _tapServer(FullVpnServerLocation s) {
@@ -485,7 +444,95 @@ class _FullVpnLocationMapCardState extends State<FullVpnLocationMapCard>
         .join();
   }
 
-  Widget _serverDot({
+  LatLng _displayPoint(FullVpnServerLocation s) =>
+      _displayPointOverrides[s.id] ?? s.point;
+
+  List<_VisibleServerMarker> _visibleServerMarkers(String? selectedId) {
+    if (_mapZoom >= 4.2) {
+      final deduped = <_VisibleServerMarker>[];
+      for (final s in widget.servers) {
+        final dp = _displayPoint(s);
+        final isDupe = deduped.any((m) =>
+        m.countryCode == s.countryCode &&
+            (m.point.latitude - dp.latitude).abs() < 0.5 &&
+            (m.point.longitude - dp.longitude).abs() < 0.5,
+        );
+        if (isDupe) {
+          if (s.id == selectedId) {
+            deduped.removeWhere((m) =>
+            m.countryCode == s.countryCode &&
+                (m.point.latitude - dp.latitude).abs() < 0.5 &&
+                (m.point.longitude - dp.longitude).abs() < 0.5,
+            );
+            deduped.add(_VisibleServerMarker(
+              point: dp,
+              countryCode: s.countryCode,
+              selected: true,
+              server: s,
+            ));
+          }
+          continue;
+        }
+        deduped.add(_VisibleServerMarker(
+          point: dp,
+          countryCode: s.countryCode,
+          selected: s.id == selectedId,
+          server: s,
+        ));
+      }
+      return deduped;
+    }
+
+    final byCountry = <String, List<FullVpnServerLocation>>{};
+    for (final s in widget.servers) {
+      final key = s.countryCode.toUpperCase();
+      byCountry.putIfAbsent(key, () => []).add(s);
+    }
+
+    final visible = <_VisibleServerMarker>[];
+
+    for (final entry in byCountry.entries) {
+      final servers = entry.value;
+      FullVpnServerLocation? selectedServer;
+
+      for (final s in servers) {
+        if (s.id == selectedId) {
+          selectedServer = s;
+          break;
+        }
+      }
+
+      final target = selectedServer ?? servers.first;
+
+      double lat = 0;
+      double lonX = 0;
+      double lonY = 0;
+
+      for (final s in servers) {
+        final p = _displayPoint(s);
+        lat += p.latitude;
+        final rad = p.longitude * math.pi / 180.0;
+        lonX += math.cos(rad);
+        lonY += math.sin(rad);
+      }
+
+      lat /= servers.length;
+      final lon = math.atan2(lonY / servers.length, lonX / servers.length) * 180.0 / math.pi;
+
+      visible.add(
+        _VisibleServerMarker(
+          point: LatLng(lat, lon),
+          countryCode: target.countryCode,
+          selected: selectedServer != null,
+          server: target,
+        ),
+      );
+    }
+
+    return visible;
+  }
+
+  Widget _serverPin({
     required ColorScheme scheme,
     required bool selected,
     required bool connected,
@@ -496,74 +543,73 @@ class _FullVpnLocationMapCardState extends State<FullVpnLocationMapCard>
     return AnimatedBuilder(
       animation: _pulseCtrl,
       builder: (context, _) {
-        final p = _pulseCtrl.value;
-        final pulse = 0.55 + 0.45 * math.sin(p * math.pi * 2);
-
-        final dotColor = selected
-            ? (connected ? Colors.greenAccent : scheme.primary)
-            : scheme.primary.withOpacity(0.75);
-
-        final ringOpacity = selected ? (0.28 + 0.22 * pulse) : (0.14 + 0.10 * pulse);
-        final ringSize = selected ? (38 + 10 * pulse) : (26 + 6 * pulse);
-        final coreSize = selected ? 22.0 : 18.0;
+        final pulse = 0.5 + 0.5 * math.sin(_pulseCtrl.value * math.pi * 2);
+        final pinColor = selected
+            ? (connected ? const Color(0xFF4ADE80) : scheme.primary)
+            : scheme.primary.withOpacity(0.65);
+        final glowOpacity = selected ? (0.22 + 0.18 * pulse) : (0.08 + 0.07 * pulse);
+        final glowSize = selected ? (44.0 + 8.0 * pulse) : (28.0 + 4.0 * pulse);
+        final circleSize = selected ? 28.0 : 22.0;
 
         return Listener(
           behavior: HitTestBehavior.opaque,
           onPointerDown: (_) => onTapDown?.call(),
           child: SizedBox(
-            width: 50,
-            height: 50,
+            width: 54,
+            height: 60,
             child: Stack(
-              alignment: Alignment.center,
+              alignment: Alignment.topCenter,
               children: [
-                Container(
-                  width: ringSize,
-                  height: ringSize,
-                  decoration: BoxDecoration(
-                    shape: BoxShape.circle,
-                    color: dotColor.withOpacity(ringOpacity),
+                Positioned(
+                  top: 0,
+                  left: 0,
+                  right: 0,
+                  child: Center(
+                    child: Container(
+                      width: glowSize,
+                      height: glowSize,
+                      decoration: BoxDecoration(
+                        shape: BoxShape.circle,
+                        color: pinColor.withOpacity(glowOpacity),
+                      ),
+                    ),
                   ),
                 ),
-                if (showFlag)
-                  Container(
-                    width: coreSize,
-                    height: coreSize,
-                    decoration: BoxDecoration(
-                      shape: BoxShape.circle,
-                      color: Colors.black.withOpacity(0.4),
-                      border: Border.all(
-                        color: selected
-                            ? (connected
-                            ? Colors.greenAccent
-                            : Colors.white.withOpacity(0.90))
-                            : Colors.white.withOpacity(0.55),
-                        width: selected ? 1.8 : 1.4,
-                      ),
-                    ),
-                    clipBehavior: Clip.hardEdge,
-                    child: Center(
-                      child: Text(
-                        _countryCodeToEmoji(countryCode),
-                        style: TextStyle(
-                          fontSize: selected ? 12 : 9,
-                          height: 1,
+                Positioned(
+                  top: math.max(0, (glowSize - circleSize) / 2 - 2),
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Container(
+                        width: circleSize,
+                        height: circleSize,
+                        decoration: BoxDecoration(
+                          shape: BoxShape.circle,
+                          color: pinColor,
+                          border: Border.all(
+                            color: Colors.white.withOpacity(selected ? 0.9 : 0.55),
+                            width: selected ? 2.0 : 1.5,
+                          ),
+                          boxShadow: selected
+                              ? [BoxShadow(color: pinColor.withOpacity(0.5), blurRadius: 10, spreadRadius: 1)]
+                              : [],
                         ),
+                        child: showFlag
+                            ? Center(
+                          child: Text(
+                            _countryCodeToEmoji(countryCode),
+                            style: TextStyle(fontSize: selected ? 13 : 10, height: 1),
+                          ),
+                        )
+                            : null,
                       ),
-                    ),
-                  )
-                else
-                  Container(
-                    width: selected ? 18.0 : 14.0,
-                    height: selected ? 18.0 : 14.0,
-                    decoration: BoxDecoration(
-                      shape: BoxShape.circle,
-                      color: dotColor,
-                      border: Border.all(
-                        color: Colors.white.withOpacity(0.90),
-                        width: selected ? 2.2 : 2.0,
+                      CustomPaint(
+                        size: Size(selected ? 8.0 : 6.0, selected ? 7.0 : 5.0),
+                        painter: _TrianglePainter(color: pinColor),
                       ),
-                    ),
+                    ],
                   ),
+                ),
               ],
             ),
           ),
@@ -576,23 +622,23 @@ class _FullVpnLocationMapCardState extends State<FullVpnLocationMapCard>
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final scheme = theme.colorScheme;
-
     final selectedId = _effectiveSelectedId;
 
     final markers = <Marker>[];
-    for (final s in widget.servers) {
-      final selected = s.id == selectedId;
+    final visibleServers = _visibleServerMarkers(selectedId);
+
+    for (final s in visibleServers) {
       markers.add(
         Marker(
           point: s.point,
-          width: 50,
-          height: 50,
-          alignment: Alignment.center,
-          child: _serverDot(
+          width: 54,
+          height: 60,
+          alignment: Alignment.bottomCenter,
+          child: _serverPin(
             scheme: scheme,
-            selected: selected,
+            selected: s.selected,
             connected: widget.connected,
-            onTapDown: () => _tapServer(s),
+            onTapDown: () => _tapServer(s.server),
             countryCode: s.countryCode,
             showFlag: widget.showFlagMarkers,
           ),
@@ -602,7 +648,6 @@ class _FullVpnLocationMapCardState extends State<FullVpnLocationMapCard>
 
     final sel = _selectedServer();
     final showRoute = _hasIpPoint && sel != null && (widget.isConnecting || widget.connected);
-
     final tileProvider = _tileStoreReady ? _tileProvider : null;
 
     return ClipRRect(
@@ -647,13 +692,19 @@ class _FullVpnLocationMapCardState extends State<FullVpnLocationMapCard>
                     initialZoom: _clampZoom(_focusZoom()),
                     minZoom: _minZoom,
                     maxZoom: _maxZoom,
-                    backgroundColor: const Color(0xFF111315),                    cameraConstraint: CameraConstraint.contain(bounds: _worldBounds),
+                    backgroundColor: const Color(0xFF0B1626),
+                    cameraConstraint: CameraConstraint.contain(bounds: _worldBounds),
                     interactionOptions: const InteractionOptions(
                       flags: InteractiveFlag.drag |
                       InteractiveFlag.pinchZoom |
                       InteractiveFlag.doubleTapZoom,
                     ),
                     onMapEvent: (e) {
+                      final zoom = e.camera.zoom;
+                      if ((_mapZoom - zoom).abs() > 0.05) {
+                        setState(() => _mapZoom = zoom);
+                      }
+
                       if (e is MapEventMoveEnd) {
                         if (_snapshotVisible) {
                           setState(() => _snapshotVisible = false);
@@ -671,17 +722,31 @@ class _FullVpnLocationMapCardState extends State<FullVpnLocationMapCard>
                     },
                   ),
                   children: [
-                    TileLayer(
-                      urlTemplate: 'https://{s}.basemaps.cartocdn.com/dark_nolabels/{z}/{x}/{y}{r}.png',
-                      subdomains: const ['a', 'b', 'c', 'd'],
-                      userAgentPackageName: 'com.colourswift.avarionxvpn',
-                      maxZoom: _maxZoom,
-                      maxNativeZoom: 6,
-                      keepBuffer: 6,
-                      tileProvider: tileProvider,
-                      tileDisplay: const TileDisplay.instantaneous(),
+                    ColorFiltered(
+                      colorFilter: ColorFilter.matrix([
+                        0.38, 0.00, 0.00, 0,  8,
+                        0.00, 0.42, 0.00, 0, 14,
+                        0.00, 0.00, 0.88, 0, 26,
+                        0.00, 0.00, 0.00, 1,  0,
+                      ]),
+                      child: TileLayer(
+                        urlTemplate: 'https://{s}.basemaps.cartocdn.com/dark_nolabels/{z}/{x}/{y}{r}.png',
+                        subdomains: const ['a', 'b', 'c', 'd'],
+                        userAgentPackageName: 'com.colourswift.avarionxvpn',
+                        maxZoom: _maxZoom,
+                        maxNativeZoom: 6,
+                        keepBuffer: 6,
+                        tileProvider: tileProvider,
+                        tileDisplay: const TileDisplay.instantaneous(),
+                      ),
                     ),
-                    if (showRoute)AnimatedConnectingRouteLayer(from: _ipCenter(), to: sel!.point, animate: widget.isConnecting,),
+                    const VpnDayNightLayer(),
+                    if (showRoute)
+                      AnimatedConnectingRouteLayer(
+                        from: _ipCenter(),
+                        to: sel!.point,
+                        animate: widget.isConnecting,
+                      ),
                     if (markers.isNotEmpty) MarkerLayer(markers: markers),
                   ],
                 ),
@@ -697,9 +762,9 @@ class _FullVpnLocationMapCardState extends State<FullVpnLocationMapCard>
                     begin: Alignment.topCenter,
                     end: Alignment.bottomCenter,
                     colors: [
-                      Colors.black.withOpacity(0.55),
-                      Colors.black.withOpacity(0.10),
-                      Colors.black.withOpacity(0.55),
+                      const Color(0xFF0B1626).withOpacity(0.52),
+                      const Color(0xFF0B1626).withOpacity(0.06),
+                      const Color(0xFF0B1626).withOpacity(0.52),
                     ],
                   ),
                 ),
@@ -717,4 +782,37 @@ class _FullVpnLocationMapCardState extends State<FullVpnLocationMapCard>
       ),
     );
   }
+}
+
+class _VisibleServerMarker {
+  final LatLng point;
+  final String countryCode;
+  final bool selected;
+  final FullVpnServerLocation server;
+
+  const _VisibleServerMarker({
+    required this.point,
+    required this.countryCode,
+    required this.selected,
+    required this.server,
+  });
+}
+
+class _TrianglePainter extends CustomPainter {
+  final Color color;
+  const _TrianglePainter({required this.color});
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final paint = Paint()..color = color..style = PaintingStyle.fill;
+    final path = ui.Path()
+      ..moveTo(0, 0)
+      ..lineTo(size.width, 0)
+      ..lineTo(size.width / 2, size.height)
+      ..close();
+    canvas.drawPath(path, paint);
+  }
+
+  @override
+  bool shouldRepaint(_TrianglePainter old) => old.color != color;
 }

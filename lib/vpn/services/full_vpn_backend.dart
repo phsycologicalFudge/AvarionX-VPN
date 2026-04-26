@@ -95,9 +95,11 @@ class FullVpnController extends ChangeNotifier {
 
   int _rxBytes = 0;
   int _txBytes = 0;
+  int _latencyMs = 0;
   DateTime? _lastStatsAt;
   double _downloadSpeedBps = 0;
   double _uploadSpeedBps = 0;
+
 
   String _selectedServerId = "de-nuremberg";
   String _vpnTransport = "wireguard";
@@ -134,6 +136,7 @@ class FullVpnController extends ChangeNotifier {
   dynamic get loc => _loc;
   int get usedBytes => _usedBytes;
   int get limitBytes => _limitBytes;
+  int get latencyMs => _latencyMs;
   bool get unlimited => _unlimited;
   bool get usageSyncing => _usageSyncing;
   bool get usageEverLoaded => _usageEverLoaded;
@@ -301,6 +304,15 @@ class FullVpnController extends ChangeNotifier {
     return "WireGuard";
   }
 
+  void _startProbePolling() {
+    _probeTimer?.cancel();
+    _probeTimer = Timer.periodic(const Duration(seconds: 12), (_) async {
+      if (_disposed || !_connected) return;
+      await _probeHttps("https://www.royalroad.com");
+      await _measureLatency();
+    });
+  }
+
   void _net(String msg) {
     final line = "${DateTime.now().toIso8601String()} $msg";
     _netLog.add(line);
@@ -421,6 +433,12 @@ class FullVpnController extends ChangeNotifier {
   Future<void> signOut() async {
     await disconnect();
     await _clearSession();
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.remove('cs_private_dns_hostname');
+    await prefs.remove(kWgPriv);
+    await prefs.remove(kWgPub);
+    await prefs.remove(kDeviceId);
+    await prefs.remove(kWgConfigLast);
     await fetchUsage(showSync: true);
     _startUsagePolling();
     _status = "Signed out.";
@@ -980,7 +998,7 @@ class FullVpnController extends ChangeNotifier {
       unawaited(_probeHttps("https://api.ipify.org"));
       unawaited(_probeHttps("https://www.royalroad.com"));
       unawaited(_probeHttps("https://cloudflare.com"));
-
+      unawaited(_measureLatency());
       _status = "Securing connection...";
       notifyListeners();
 
@@ -1049,17 +1067,25 @@ class FullVpnController extends ChangeNotifier {
     );
   }
 
-  void _startProbePolling() {
-    _probeTimer?.cancel();
-    _probeTimer = Timer.periodic(const Duration(seconds: 12), (_) async {
-      if (_disposed || !_connected) return;
-      await _probeHttps("https://www.royalroad.com");
-    });
-  }
-
   void _stopProbePolling() {
     _probeTimer?.cancel();
     _probeTimer = null;
+  }
+
+  Future<void> _measureLatency() async {
+    if (!_connected) return;
+    try {
+      final sw = Stopwatch()..start();
+      final socket = await Socket.connect(
+        '1.1.1.1',
+        53,
+        timeout: const Duration(seconds: 4),
+      );
+      sw.stop();
+      socket.destroy();
+      _latencyMs = sw.elapsedMilliseconds;
+      notifyListeners();
+    } catch (_) {}
   }
 
   Future<void> _pollTunnelStats() async {
@@ -1067,6 +1093,7 @@ class FullVpnController extends ChangeNotifier {
       if (_downloadSpeedBps != 0 || _uploadSpeedBps != 0) {
         _downloadSpeedBps = 0;
         _uploadSpeedBps = 0;
+        _latencyMs = 0;
         notifyListeners();
       }
       _lastStatsAt = null;
@@ -1403,8 +1430,6 @@ class FullVpnController extends ChangeNotifier {
       final req = await client.getUrl(uri).timeout(const Duration(seconds: 8));
       final resp = await req.close().timeout(const Duration(seconds: 8));
       swConn.stop();
-
-      _net("probe ok url=$url ms=${swConn.elapsedMilliseconds} status=${resp.statusCode}");
 
       try {
         await resp.drain();

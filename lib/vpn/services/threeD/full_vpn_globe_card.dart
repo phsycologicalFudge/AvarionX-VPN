@@ -5,6 +5,10 @@ import 'package:flutter_globe_3d/flutter_globe_3d.dart';
 import 'full_vpn_globe_controller.dart';
 import 'full_vpn_globe_markers.dart';
 
+const _displayOverrides = <String, List<double>>{
+  'uk': [51.5074, -0.1278],
+};
+
 class FullVpnGlobeCard extends StatefulWidget {
   final double? lat;
   final double? lon;
@@ -38,7 +42,10 @@ class _FullVpnGlobeCardState extends State<FullVpnGlobeCard>
   late EarthController _controller;
   late final AnimationController _focusCtrl;
 
+  static const double _panelLatOffset = 12.0;
+
   String? _lastAppliedFocusKey;
+  String? _previewSelectedId;
 
   double _currentLat = 20.0;
   double _currentLon = 0.0;
@@ -55,7 +62,15 @@ class _FullVpnGlobeCardState extends State<FullVpnGlobeCard>
     return true;
   }
 
+  double _displayLat(FullVpnServerLocation s) =>
+      _displayOverrides[s.id]?[0] ?? s.point.latitude;
+
+  double _displayLon(FullVpnServerLocation s) =>
+      _displayOverrides[s.id]?[1] ?? s.point.longitude;
+
   String? get _effectiveSelectedId {
+    final p = _previewSelectedId;
+    if (p != null && p.isNotEmpty) return p;
     final id = widget.selectedServerId;
     if (id == null || id.isEmpty) return null;
     return id;
@@ -75,18 +90,18 @@ class _FullVpnGlobeCardState extends State<FullVpnGlobeCard>
     if (selected != null) {
       return _GlobeFocusData(
         'server:${selected.id}',
-        selected.point.latitude,
-        selected.point.longitude,
+        _displayLat(selected) - _panelLatOffset,
+        _displayLon(selected),
       );
     }
     if (_hasIpPoint) {
       return _GlobeFocusData(
         'ip:${widget.lat!.toStringAsFixed(4)}:${widget.lon!.toStringAsFixed(4)}',
-        widget.lat!,
+        widget.lat! - _panelLatOffset,
         widget.lon!,
       );
     }
-    return _GlobeFocusData('fallback', 20, 0);
+    return _GlobeFocusData('fallback', 20.0 - _panelLatOffset, 0.0);
   }
 
   @override
@@ -107,7 +122,9 @@ class _FullVpnGlobeCardState extends State<FullVpnGlobeCard>
       duration: const Duration(milliseconds: 850),
     )..addListener(_tickFocus);
 
-    _populateScene();
+    _buildServerNodes(_controller, _effectiveSelectedId);
+    _buildIpNode(_controller);
+    _buildConnection(_controller);
 
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
@@ -139,6 +156,10 @@ class _FullVpnGlobeCardState extends State<FullVpnGlobeCard>
         oldWidget.lat!.isFinite && oldWidget.lon!.isFinite;
     final ipPresenceChanged = oldHadIpPoint != _hasIpPoint;
 
+    if (selectedChanged) {
+      _previewSelectedId = null;
+    }
+
     if (selectedChanged || serverIdsChanged || ipPresenceChanged || connectionChanged || flagMarkersChanged) {
       _rebuildScene();
     }
@@ -159,57 +180,88 @@ class _FullVpnGlobeCardState extends State<FullVpnGlobeCard>
     return true;
   }
 
-  void _rebuildScene() {
-    final newController = buildFullVpnEarthController();
-    final selectedId = _effectiveSelectedId;
+  void _buildServerNodes(EarthController controller, String? selectedId) {
+    final deduped = <_DedupeEntry>[];
 
-    for (final server in widget.servers) {
-      newController.addNode(
+    for (final s in widget.servers) {
+      final dlat = _displayLat(s);
+      final dlon = _displayLon(s);
+      final cc = s.countryCode.toUpperCase();
+      final isDupe = deduped.any((m) =>
+      m.cc == cc &&
+          (m.lat - dlat).abs() < 0.5 &&
+          (m.lon - dlon).abs() < 0.5,
+      );
+      if (isDupe) {
+        if (s.id == selectedId) {
+          deduped.removeWhere((m) =>
+          m.cc == cc &&
+              (m.lat - dlat).abs() < 0.5 &&
+              (m.lon - dlon).abs() < 0.5,
+          );
+          deduped.add(_DedupeEntry(id: s.id, cc: cc, lat: dlat, lon: dlon, server: s));
+        }
+        continue;
+      }
+      deduped.add(_DedupeEntry(id: s.id, cc: cc, lat: dlat, lon: dlon, server: s));
+    }
+
+    for (final entry in deduped) {
+      controller.addNode(
         EarthNode(
-          id: server.id,
-          latitude: server.point.latitude,
-          longitude: server.point.longitude,
+          id: entry.id,
+          latitude: entry.lat,
+          longitude: entry.lon,
           child: GestureDetector(
             behavior: HitTestBehavior.opaque,
             onTap: () {
-              _focusServerNow(server);
-              widget.onServerTap?.call(server);
+              _focusServerNow(entry.server);
+              widget.onServerTap?.call(entry.server);
             },
             child: FullVpnGlobeServerMarker(
-              selected: server.id == selectedId,
+              selected: entry.id == selectedId,
               connected: widget.connected,
-              countryCode: server.countryCode,
+              countryCode: entry.server.countryCode,
               showFlag: widget.showFlagMarkers,
             ),
           ),
         ),
       );
     }
+  }
 
-    if (_hasIpPoint) {
-      newController.addNode(
-        EarthNode(
-          id: '__user_ip__',
-          latitude: widget.lat!,
-          longitude: widget.lon!,
-          child: const FullVpnGlobeUserMarker(),
-        ),
-      );
-    }
+  void _buildIpNode(EarthController controller) {
+    if (!_hasIpPoint) return;
+    controller.addNode(
+      EarthNode(
+        id: '__user_ip__',
+        latitude: widget.lat!,
+        longitude: widget.lon!,
+        child: const FullVpnGlobeUserMarker(),
+      ),
+    );
+  }
 
+  void _buildConnection(EarthController controller) {
     final selected = _selectedServer;
-    if (_hasIpPoint && selected != null) {
-      newController.connect(
-        EarthConnection(
-          fromId: '__user_ip__',
-          toId: selected.id,
-          color: widget.connected ? Colors.greenAccent : const Color(0xFF60A5FA),
-          width: 1.9,
-          isDashed: false,
-          showArrow: false,
-        ),
-      );
-    }
+    if (!_hasIpPoint || selected == null) return;
+    controller.connect(
+      EarthConnection(
+        fromId: '__user_ip__',
+        toId: selected.id,
+        color: widget.connected ? Colors.greenAccent : const Color(0xFF60A5FA),
+        width: 1.9,
+        isDashed: false,
+        showArrow: false,
+      ),
+    );
+  }
+
+  void _rebuildScene() {
+    final newController = buildFullVpnEarthController();
+    _buildServerNodes(newController, _effectiveSelectedId);
+    _buildIpNode(newController);
+    _buildConnection(newController);
 
     final oldController = _controller;
     _controller = newController;
@@ -221,57 +273,6 @@ class _FullVpnGlobeCardState extends State<FullVpnGlobeCard>
       if (!mounted) return;
       oldController.dispose();
     });
-  }
-
-  void _populateScene() {
-    final selectedId = _effectiveSelectedId;
-    for (final server in widget.servers) {
-      _controller.addNode(
-        EarthNode(
-          id: server.id,
-          latitude: server.point.latitude,
-          longitude: server.point.longitude,
-          child: GestureDetector(
-            behavior: HitTestBehavior.opaque,
-            onTap: () {
-              _focusServerNow(server);
-              widget.onServerTap?.call(server);
-            },
-            child: FullVpnGlobeServerMarker(
-              selected: server.id == selectedId,
-              connected: widget.connected,
-              countryCode: server.countryCode,
-              showFlag: widget.showFlagMarkers,
-            ),
-          ),
-        ),
-      );
-    }
-
-    if (_hasIpPoint) {
-      _controller.addNode(
-        EarthNode(
-          id: '__user_ip__',
-          latitude: widget.lat!,
-          longitude: widget.lon!,
-          child: const FullVpnGlobeUserMarker(),
-        ),
-      );
-    }
-
-    final selected = _selectedServer;
-    if (_hasIpPoint && selected != null) {
-      _controller.connect(
-        EarthConnection(
-          fromId: '__user_ip__',
-          toId: selected.id,
-          color: widget.connected ? Colors.greenAccent : const Color(0xFF60A5FA),
-          width: 1.9,
-          isDashed: false,
-          showArrow: false,
-        ),
-      );
-    }
   }
 
   void _tickFocus() {
@@ -305,14 +306,16 @@ class _FullVpnGlobeCardState extends State<FullVpnGlobeCard>
   }
 
   void _focusServerNow(FullVpnServerLocation server) {
+    _previewSelectedId = server.id;
     _lastAppliedFocusKey = 'server:${server.id}';
     _fromLat = _currentLat;
     _fromLon = _currentLon;
-    _toLat = server.point.latitude;
-    _toLon = server.point.longitude;
+    _toLat = _displayLat(server) - _panelLatOffset;
+    _toLon = _displayLon(server);
     _focusCtrl.stop();
     _focusCtrl.value = 0.0;
     _focusCtrl.forward();
+    _rebuildScene();
   }
 
   @override
@@ -321,14 +324,14 @@ class _FullVpnGlobeCardState extends State<FullVpnGlobeCard>
       borderRadius: BorderRadius.circular(22),
       child: Stack(
         children: [
-          Positioned.fill(child: Container(color: Colors.black)),
+          const Positioned.fill(child: ColoredBox(color: Color(0xFF050A12))),
           Positioned.fill(
             child: LayoutBuilder(
               builder: (context, constraints) {
                 final diameter = math.max(constraints.maxWidth, constraints.maxHeight) * 1.3;
                 return InteractiveViewer(
                   minScale: 1.0,
-                  maxScale: 3.5,
+                  maxScale: 1.0,
                   panEnabled: false,
                   child: OverflowBox(
                     maxWidth: diameter,
@@ -377,4 +380,20 @@ class _GlobeFocusData {
   final double latitude;
   final double longitude;
   _GlobeFocusData(this.key, this.latitude, this.longitude);
+}
+
+class _DedupeEntry {
+  final String id;
+  final String cc;
+  final double lat;
+  final double lon;
+  final FullVpnServerLocation server;
+
+  const _DedupeEntry({
+    required this.id,
+    required this.cc,
+    required this.lat,
+    required this.lon,
+    required this.server,
+  });
 }

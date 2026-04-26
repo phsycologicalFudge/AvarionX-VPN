@@ -18,6 +18,7 @@ EarthController buildFullVpnEarthController() {
   controller.rotateSpeed = 0;
   controller.enableAutoRotate = false;
   controller.minZoom = 0.75;
+  controller.maxZoom = 1.8;
   controller.setLightMode(EarthLightMode.realTime);
   return controller;
 }

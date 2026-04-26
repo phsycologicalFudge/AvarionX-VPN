@@ -1807,7 +1807,7 @@ class AppLocalizationsPt extends AppLocalizations {
       'It does not encrypt your traffic or hide your IP.';
 
   @override
-  String get networkDnsOffEnableButton => 'Enable DNS Filtering';
+  String get networkDnsOffEnableButton => 'Enable DNS filtering (using vpn)';
 
   @override
   String vpnAccountServerConnectedCountWithLabel(Object connected, Object cap) {

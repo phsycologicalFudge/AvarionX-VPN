@@ -128,10 +128,10 @@ class ThemeManager extends ChangeNotifier {
   static ThemeData _buildBlackTheme() {
     return _buildTheme(
       brightness: Brightness.dark,
-      primary: const Color(0xFF4EA3FF),
-      secondary: const Color(0xFF3DD6C6),
-      surface: const Color(0xFF121212),
-      container: const Color(0xFF1C1C1C),
+      primary: const Color(0xFF4F6EF5),
+      secondary: const Color(0xFF4F6EF5),
+      surface: const Color(0xFF0B1220),
+      container: const Color(0xFF111E30),
     );
   }
 

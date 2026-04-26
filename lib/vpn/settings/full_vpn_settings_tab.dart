@@ -130,120 +130,153 @@ class _FullVpnSettingsTabState extends State<FullVpnSettingsTab> {
   String _accountTileBody() {
     final signedIn = c.token.isNotEmpty && c.me != null;
     if (!signedIn) return "Sign in to sync your account across devices.";
-
-    final plan = (c.me?["plan"] ?? "").toString().trim();
-    final isPro = c.me?["isPro"] == true;
-    final planPart = isPro ? "Pro" : plan.isNotEmpty ? plan : "Free";
     return "Manage your account";
   }
 
-  Widget _optionsSection(BuildContext context) {
+  Widget _sectionLabel(BuildContext context, String text) {
+    final theme = Theme.of(context);
+    return Padding(
+      padding: const EdgeInsets.only(top: 24, bottom: 6),
+      child: Text(
+        text,
+        style: theme.textTheme.labelMedium?.copyWith(
+          color: theme.colorScheme.onSurfaceVariant,
+          fontWeight: FontWeight.w700,
+          letterSpacing: 0.3,
+        ),
+      ),
+    );
+  }
+
+  Widget _settingsSwitchTile(
+      BuildContext context, {
+        required Widget leading,
+        required String title,
+        required String body,
+        required bool value,
+        required ValueChanged<bool> onChanged,
+        bool showDivider = true,
+      }) {
     final theme = Theme.of(context);
     final scheme = theme.colorScheme;
+
+    return Column(
+      children: [
+        Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 2, vertical: 14),
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Padding(
+                padding: const EdgeInsets.only(top: 2),
+                child: SizedBox(width: 24, height: 24, child: leading),
+              ),
+              const SizedBox(width: 14),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      title,
+                      style: theme.textTheme.bodyMedium?.copyWith(
+                        fontWeight: FontWeight.w900,
+                        color: scheme.onSurface,
+                      ),
+                    ),
+                    const SizedBox(height: 4),
+                    Text(
+                      body,
+                      style: theme.textTheme.bodySmall?.copyWith(
+                        color: scheme.onSurfaceVariant,
+                        height: 1.35,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(width: 10),
+              Transform.scale(
+                scale: 0.92,
+                child: Switch(value: value, onChanged: onChanged),
+              ),
+            ],
+          ),
+        ),
+        if (showDivider)
+          Divider(
+            height: 1,
+            thickness: 1,
+            color: scheme.outlineVariant.withOpacity(0.16),
+          ),
+      ],
+    );
+  }
+
+  Widget _optionsSection(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
     final vpnTheme = Theme.of(context);
+    final l10n = AppLocalizations.of(context)!;
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
+        _sectionLabel(context, "Account"),
         _settingsNavTile(
           context,
           leading: Icon(Icons.person_rounded, color: scheme.onSurface, size: 22),
           title: "My Account",
           body: _accountTileBody(),
-          onTap: () {
-            Navigator.of(context).push(
-              MaterialPageRoute(
-                builder: (_) => Theme(
-                  data: vpnTheme,
-                  child: FullVpnAccountScreen(c: c),
-                ),
-              ),
-            );
-          },
+          showDivider: false,
+          onTap: () => Navigator.of(context).push(MaterialPageRoute(
+            builder: (_) => Theme(data: vpnTheme, child: FullVpnAccountScreen(c: c)),
+          )),
         ),
+
+        _sectionLabel(context, "Features"),
         _settingsNavTile(
           context,
           leading: Icon(Icons.alt_route_rounded, color: scheme.onSurface, size: 22),
           title: "Split tunneling",
           body: "Choose which apps bypass the VPN and use your normal connection.",
-          onTap: () {
-            Navigator.of(context).push(
-              MaterialPageRoute(
-                builder: (_) => Theme(
-                  data: vpnTheme,
-                  child: const FullVpnSplitTunnelingScreen(),
-                ),
-              ),
-            );
-          },
+          showDivider: false,
+          onTap: () => Navigator.of(context).push(MaterialPageRoute(
+            builder: (_) => Theme(data: vpnTheme, child: const FullVpnSplitTunnelingScreen()),
+          )),
         ),
-        ListTile(
-          contentPadding: const EdgeInsets.symmetric(horizontal: 2, vertical: 2),
-          leading: Padding(
-            padding: const EdgeInsets.only(top: 2),
-            child: SizedBox(
-              width: 24,
-              height: 24,
-              child: Icon(Icons.flag_rounded, color: scheme.onSurface, size: 22),
-            ),
-          ),
-          title: Text(
-            "Flag markers",
-            style: theme.textTheme.bodyMedium?.copyWith(
-              fontWeight: FontWeight.w900,
-              color: scheme.onSurface,
-            ),
-          ),
-          subtitle: Padding(
-            padding: const EdgeInsets.only(top: 4),
-            child: Text(
-              "Show country flags on the map instead of dots.",
-              style: theme.textTheme.bodySmall?.copyWith(
-                color: scheme.onSurfaceVariant,
-                height: 1.35,
-                fontWeight: FontWeight.w600,
-              ),
-            ),
-          ),
-          trailing: Switch(
-            value: c.showFlagMarkers,
-            onChanged: (v) {
-              c.setShowFlagMarkers(v);
-              setState(() {});
-            },
-          ),
+
+        _sectionLabel(context, "Customisation"),
+        _settingsSwitchTile(
+          context,
+          leading: Icon(Icons.flag_rounded, color: scheme.onSurface, size: 22),
+          title: "Flag markers",
+          body: "Show country flags on the map instead of dots.",
+          value: c.showFlagMarkers,
+          onChanged: (v) {
+            c.setShowFlagMarkers(v);
+            setState(() {});
+          },
         ),
         _settingsNavTile(
           context,
           leading: Icon(Icons.music_note_rounded, color: scheme.onSurface, size: 22),
           title: "Connection sounds",
           body: "Choose the sounds used when the VPN connects and disconnects.",
-          onTap: () {
-            Navigator.of(context).push(
-              MaterialPageRoute(
-                builder: (_) => Theme(
-                  data: vpnTheme,
-                  child: FullVpnSoundSettingsScreen(c: c),
-                ),
-              ),
-            );
-          },
+          showDivider: false,
+          onTap: () => Navigator.of(context).push(MaterialPageRoute(
+            builder: (_) => Theme(data: vpnTheme, child: FullVpnSoundSettingsScreen(c: c)),
+          )),
         ),
+
+        _sectionLabel(context, "About us"),
         _settingsNavTile(
           context,
           leading: Icon(Icons.shield_rounded, color: scheme.onSurface, size: 22),
-          title: AppLocalizations.of(context)!.vpnSettingsPrivacySecurityTitle,
+          title: l10n.vpnSettingsPrivacySecurityTitle,
           body: "View privacy details, logging policy, protocol and protection features.",
-          onTap: () {
-            Navigator.of(context).push(
-              MaterialPageRoute(
-                builder: (_) => Theme(
-                  data: vpnTheme,
-                  child: const FullVpnPrivacySecurityScreen(),
-                ),
-              ),
-            );
-          },
+          onTap: () => Navigator.of(context).push(MaterialPageRoute(
+            builder: (_) => Theme(data: vpnTheme, child: const FullVpnPrivacySecurityScreen()),
+          )),
         ),
         _settingsNavTile(
           context,
@@ -253,11 +286,21 @@ class _FullVpnSettingsTabState extends State<FullVpnSettingsTab> {
           ),
           title: "Join our Discord",
           body: "Get updates, ask questions and join the community.",
+          onTap: () async => launchUrl(
+            Uri.parse("https://discord.gg/VYubQJfcYM"),
+            mode: LaunchMode.externalApplication,
+          ),
+        ),
+        _settingsNavTile(
+          context,
+          leading: Icon(Icons.forum_rounded, color: scheme.onSurface, size: 22),
+          title: "Reddit",
+          body: "Follow r/AvarionX for news and updates.",
           showDivider: false,
-          onTap: () async {
-            final uri = Uri.parse("https://discord.gg/VYubQJfcYM");
-            await launchUrl(uri, mode: LaunchMode.externalApplication);
-          },
+          onTap: () async => launchUrl(
+            Uri.parse("https://www.reddit.com/r/AvarionX/"),
+            mode: LaunchMode.externalApplication,
+          ),
         ),
       ],
     );

@@ -3299,7 +3299,7 @@ abstract class AppLocalizations {
   /// No description provided for @networkDnsOffEnableButton.
   ///
   /// In en, this message translates to:
-  /// **'Enable DNS Filtering'**
+  /// **'Enable DNS filtering (using vpn)'**
   String get networkDnsOffEnableButton;
 
   /// No description provided for @vpnAccountServerConnectedCountWithLabel.

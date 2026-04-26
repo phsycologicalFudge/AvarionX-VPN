@@ -1,3 +1,5 @@
+import 'dart:math' as math;
+import 'dart:ui';
 import 'package:country_flags/country_flags.dart';
 import 'package:flutter/material.dart';
 import '../services/full_vpn_server_locations.dart';
@@ -31,21 +33,12 @@ class FullVpnServerPickerSheet extends StatefulWidget {
 class _FullVpnServerPickerSheetState extends State<FullVpnServerPickerSheet> {
   late String _tab;
   bool _showModeHint = false;
-  final TextEditingController _searchController = TextEditingController();
+  final Set<String> _expandedCountries = {};
 
   @override
   void initState() {
     super.initState();
     _tab = widget.initialMode;
-    _searchController.addListener(() {
-      if (mounted) setState(() {});
-    });
-  }
-
-  @override
-  void dispose() {
-    _searchController.dispose();
-    super.dispose();
   }
 
   List<FullVpnServerLocation> get _servers {
@@ -54,25 +47,10 @@ class _FullVpnServerPickerSheetState extends State<FullVpnServerPickerSheet> {
     return widget.privacyServers;
   }
 
-  List<FullVpnServerLocation> get _filteredServers {
-    final query = _searchController.text.trim().toLowerCase();
-    if (query.isEmpty) return _servers;
-    return _servers.where((s) {
-      return s.label.toLowerCase().contains(query) ||
-          s.countryCode.toLowerCase().contains(query);
-    }).toList();
-  }
-
   String _transportForTab() {
     if (_tab == "obfuscation") return "amnezia";
     if (_tab == "stealth_plus") return "hysteria";
     return "wireguard";
-  }
-
-  Color _accentForTab(ColorScheme scheme, String tab) {
-    if (tab == "obfuscation") return const Color(0xFFE2AE38);
-    if (tab == "stealth_plus") return const Color(0xFF9B6BFF);
-    return scheme.primary;
   }
 
   String _titleForTab(String tab) {
@@ -109,75 +87,26 @@ class _FullVpnServerPickerSheetState extends State<FullVpnServerPickerSheet> {
     }
   }
 
-  Widget _modeInfoRow(
-      BuildContext context,
-      String tab, {
-        required bool locked,
-      }) {
-    final theme = Theme.of(context);
-    final scheme = theme.colorScheme;
-    final selected = _tab == tab;
-    final accent = _accentForTab(scheme, tab);
-
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 14),
-      decoration: BoxDecoration(
-        color: selected
-            ? accent.withValues(alpha: 0.10)
-            : scheme.surface.withValues(alpha: 0.10),
-        borderRadius: BorderRadius.circular(18),
-        border: Border.all(
-          color: selected
-              ? accent.withValues(alpha: 0.52)
-              : scheme.outlineVariant.withValues(alpha: 0.14),
-        ),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            children: [
-              Expanded(
-                child: Text(
-                  _titleForTab(tab),
-                  style: theme.textTheme.titleMedium?.copyWith(
-                    fontWeight: FontWeight.w800,
-                    color: selected ? accent : scheme.onSurface,
-                  ),
-                ),
-              ),
-              if (locked)
-                Text(
-                  "Pro",
-                  style: theme.textTheme.labelMedium?.copyWith(
-                    color: const Color(0xFFFFE7A3),
-                    fontWeight: FontWeight.w800,
-                  ),
-                ),
-            ],
-          ),
-          const SizedBox(height: 8),
-          Text(
-            _bodyForTab(tab),
-            style: theme.textTheme.bodyMedium?.copyWith(
-              color: scheme.onSurfaceVariant,
-              fontWeight: FontWeight.w600,
-              height: 1.35,
-            ),
-          ),
-        ],
-      ),
-    );
+  List<MapEntry<String, List<FullVpnServerLocation>>> _grouped() {
+    final map = <String, List<FullVpnServerLocation>>{};
+    final order = <String>[];
+    for (final s in _servers) {
+      final code = s.countryCode.toUpperCase();
+      if (!map.containsKey(code)) {
+        map[code] = [];
+        order.add(code);
+      }
+      map[code]!.add(s);
+    }
+    return [for (final c in order) MapEntry(c, map[c]!)];
   }
 
-  Widget _modeHintBubble(BuildContext context) {
+  Widget _modeHint(BuildContext context) {
     final theme = Theme.of(context);
     final scheme = theme.colorScheme;
-    final accent = _accentForTab(scheme, _tab);
-    final locked = _tab == "stealth_plus" && !widget.hasPro;
 
     return AnimatedSwitcher(
-      duration: const Duration(milliseconds: 220),
+      duration: const Duration(milliseconds: 200),
       switchInCurve: Curves.easeOut,
       switchOutCurve: Curves.easeIn,
       transitionBuilder: (child, animation) {
@@ -191,75 +120,28 @@ class _FullVpnServerPickerSheetState extends State<FullVpnServerPickerSheet> {
         );
       },
       child: !_showModeHint
-          ? const SizedBox.shrink(key: ValueKey("mode_hint_hidden"))
-          : Container(
+          ? const SizedBox.shrink(key: ValueKey("hint_hidden"))
+          : Padding(
         key: ValueKey(_tab),
-        margin: const EdgeInsets.only(top: 10),
-        padding: const EdgeInsets.fromLTRB(14, 12, 14, 12),
-        decoration: BoxDecoration(
-          color: scheme.surface.withValues(alpha: 0.12),
-          borderRadius: BorderRadius.circular(16),
-          border: Border.all(
-            color: scheme.outlineVariant.withValues(alpha: 0.14),
-          ),
-        ),
-        child: Stack(
-          clipBehavior: Clip.none,
+        padding: const EdgeInsets.only(top: 14, bottom: 2),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Positioned(
-              top: -8,
-              right: 18,
-              child: Container(
-                width: 14,
-                height: 14,
-                decoration: BoxDecoration(
-                  color: scheme.surface.withValues(alpha: 0.12),
-                  border: Border(
-                    top: BorderSide(
-                      color: scheme.outlineVariant.withValues(alpha: 0.14),
-                    ),
-                    left: BorderSide(
-                      color: scheme.outlineVariant.withValues(alpha: 0.14),
-                    ),
-                  ),
-                ),
-                transform: Matrix4.rotationZ(-0.785398),
+            Text(
+              _titleForTab(_tab),
+              style: theme.textTheme.labelLarge?.copyWith(
+                fontWeight: FontWeight.w800,
+                color: Colors.white.withValues(alpha: 0.90),
               ),
             ),
-            Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Row(
-                  children: [
-                    Expanded(
-                      child: Text(
-                        _titleForTab(_tab),
-                        style: theme.textTheme.labelLarge?.copyWith(
-                          fontWeight: FontWeight.w800,
-                          color: accent,
-                        ),
-                      ),
-                    ),
-                    if (locked)
-                      Text(
-                        "Pro",
-                        style: theme.textTheme.labelMedium?.copyWith(
-                          color: scheme.onSurfaceVariant,
-                          fontWeight: FontWeight.w700,
-                        ),
-                      ),
-                  ],
-                ),
-                const SizedBox(height: 6),
-                Text(
-                  _bodyForTab(_tab),
-                  style: theme.textTheme.bodyMedium?.copyWith(
-                    color: scheme.onSurfaceVariant,
-                    fontWeight: FontWeight.w600,
-                    height: 1.35,
-                  ),
-                ),
-              ],
+            const SizedBox(height: 5),
+            Text(
+              _bodyForTab(_tab),
+              style: theme.textTheme.bodyMedium?.copyWith(
+                color: scheme.onSurfaceVariant,
+                fontWeight: FontWeight.w500,
+                height: 1.40,
+              ),
             ),
           ],
         ),
@@ -271,124 +153,206 @@ class _FullVpnServerPickerSheetState extends State<FullVpnServerPickerSheet> {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final scheme = theme.colorScheme;
-    final servers = _filteredServers;
 
-    Widget tabButton({
-      required String value,
-      required String label,
-      required bool locked,
-    }) {
-      final selected = _tab == value;
-      final enabled = !locked;
+    Widget tabRow() {
+      Widget tab({
+        required String value,
+        required String label,
+        required bool locked,
+      }) {
+        final selected = _tab == value;
+        final enabled = !locked;
 
-      return Expanded(
-        child: InkWell(
-          borderRadius: BorderRadius.circular(14),
-          onTap: enabled
-              ? () {
-            setState(() {
+        return Expanded(
+          child: GestureDetector(
+            behavior: HitTestBehavior.opaque,
+            onTap: enabled
+                ? () => setState(() {
               _tab = value;
-            });
-          }
-              : null,
-          child: AnimatedContainer(
-            duration: const Duration(milliseconds: 180),
-            height: 42,
-            alignment: Alignment.center,
-            decoration: BoxDecoration(
-              color: selected
-                  ? _accentForTab(scheme, value).withValues(alpha: 0.14)
-                  : scheme.surface.withValues(alpha: 0.10),
-              borderRadius: BorderRadius.circular(14),
-              border: Border.all(
-                color: selected
-                    ? _accentForTab(scheme, value).withValues(alpha: 0.72)
-                    : scheme.outlineVariant.withValues(alpha: 0.16),
+              _expandedCountries.clear();
+            })
+                : null,
+            child: Padding(
+              padding: const EdgeInsets.symmetric(vertical: 10),
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.center,
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Text(
+                    label,
+                    style: theme.textTheme.labelLarge?.copyWith(
+                      fontWeight: selected ? FontWeight.w800 : FontWeight.w600,
+                      color: selected
+                          ? Colors.white
+                          : Colors.white.withValues(
+                        alpha: enabled ? 0.45 : 0.25,
+                      ),
+                    ),
+                  ),
+                  if (locked) ...[
+                    const SizedBox(width: 5),
+                    Text(
+                      "Pro",
+                      style: theme.textTheme.labelSmall?.copyWith(
+                        color: Colors.white.withValues(alpha: 0.28),
+                        fontWeight: FontWeight.w700,
+                        letterSpacing: 0.1,
+                      ),
+                    ),
+                  ],
+                ],
               ),
             ),
-            child: Row(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                if (locked) ...[
-                  Icon(
-                    Icons.lock_rounded,
-                    size: 13,
-                    color: scheme.onSurfaceVariant.withValues(alpha: 0.72),
+          ),
+        );
+      }
+
+      final tabs = ["privacy", "obfuscation", "stealth_plus"];
+      final selectedIndex = tabs.indexOf(_tab).clamp(0, 2);
+
+      return Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              tab(value: "privacy", label: "Privacy", locked: false),
+              tab(value: "obfuscation", label: "Obfuscation", locked: false),
+              tab(value: "stealth_plus", label: "Stealth+", locked: !widget.hasPro),
+            ],
+          ),
+          LayoutBuilder(
+            builder: (context, constraints) {
+              final w = constraints.maxWidth;
+              final tabW = w / 3;
+              return Stack(
+                children: [
+                  Container(
+                    height: 1,
+                    color: Colors.white.withValues(alpha: 0.07),
                   ),
-                  const SizedBox(width: 4),
+                  AnimatedPositioned(
+                    duration: const Duration(milliseconds: 200),
+                    curve: Curves.easeOut,
+                    left: selectedIndex * tabW + tabW * 0.20,
+                    top: 0,
+                    child: Container(
+                      width: tabW * 0.60,
+                      height: 1,
+                      decoration: BoxDecoration(
+                        color: Colors.white.withValues(alpha: 0.55),
+                        borderRadius: BorderRadius.circular(1),
+                      ),
+                    ),
+                  ),
                 ],
-                Flexible(
-                  child: Text(
-                    label,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: theme.textTheme.labelLarge?.copyWith(
-                      fontWeight: FontWeight.w800,
-                      color: selected
-                          ? _accentForTab(scheme, value)
-                          : scheme.onSurface.withValues(alpha: enabled ? 0.88 : 0.42),
+              );
+            },
+          ),
+        ],
+      );
+    }
+
+    Widget groupHeaderRow(String code, List<FullVpnServerLocation> group) {
+      final isMulti = group.length > 1;
+      final expanded = _expandedCountries.contains(code);
+      final anySelected = group.any((s) => s.id == widget.selectedServerId);
+      final unlocked = _tab == "privacy" ? true : widget.isServerUnlocked(group.first);
+
+      return AnimatedOpacity(
+        duration: const Duration(milliseconds: 160),
+        opacity: unlocked ? 1.0 : 0.35,
+        child: Container(
+          color: anySelected && !isMulti
+              ? Colors.white.withValues(alpha: 0.05)
+              : Colors.transparent,
+          child: Row(
+            children: [
+              Expanded(
+                child: InkWell(
+                  onTap: unlocked
+                      ? () async {
+                    final server = isMulti
+                        ? group[math.Random().nextInt(group.length)]
+                        : group.first;
+                    await widget.onSelect(server, _transportForTab());
+                  }
+                      : null,
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 13),
+                    child: Row(
+                      children: [
+                        CountryFlag.fromCountryCode(code, height: 20, width: 28),
+                        const SizedBox(width: 12),
+                        Expanded(
+                          child: Text(
+                            _countryName(code),
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: theme.textTheme.bodyLarge?.copyWith(
+                              fontWeight: anySelected ? FontWeight.w800 : FontWeight.w600,
+                              color: Colors.white.withValues(
+                                alpha: unlocked ? (anySelected ? 1.0 : 0.85) : 0.5,
+                              ),
+                            ),
+                          ),
+                        ),
+                      ],
                     ),
                   ),
                 ),
-              ],
-            ),
-          ),
-        ),
-      );
-    }
-
-    Widget searchField() {
-      return Container(
-        height: 46,
-        decoration: BoxDecoration(
-          color: scheme.surface.withValues(alpha: 0.12),
-          borderRadius: BorderRadius.circular(16),
-          border: Border.all(
-            color: scheme.outlineVariant.withValues(alpha: 0.14),
-          ),
-        ),
-        child: TextField(
-          controller: _searchController,
-          style: theme.textTheme.bodyMedium?.copyWith(
-            color: scheme.onSurface,
-            fontWeight: FontWeight.w600,
-          ),
-          decoration: InputDecoration(
-            isDense: true,
-            border: InputBorder.none,
-            hintText: "Search location",
-            hintStyle: theme.textTheme.bodyMedium?.copyWith(
-              color: scheme.onSurfaceVariant.withValues(alpha: 0.70),
-              fontWeight: FontWeight.w500,
-            ),
-            prefixIcon: Icon(
-              Icons.search_rounded,
-              color: scheme.onSurfaceVariant,
-              size: 19,
-            ),
-            suffixIcon: _searchController.text.trim().isEmpty
-                ? null
-                : IconButton(
-              onPressed: () {
-                _searchController.clear();
-                setState(() {});
-              },
-              icon: Icon(
-                Icons.close_rounded,
-                color: scheme.onSurfaceVariant,
-                size: 18,
               ),
-            ),
-            contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 13),
+              if (isMulti)
+                GestureDetector(
+                  behavior: HitTestBehavior.opaque,
+                  onTap: () => setState(() {
+                    if (expanded) {
+                      _expandedCountries.remove(code);
+                    } else {
+                      _expandedCountries.add(code);
+                    }
+                  }),
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 13),
+                    child: AnimatedRotation(
+                      duration: const Duration(milliseconds: 180),
+                      curve: Curves.easeOut,
+                      turns: expanded ? 0.125 : 0,
+                      child: Icon(
+                        Icons.add_rounded,
+                        size: 16,
+                        color: Colors.white.withValues(alpha: expanded ? 0.55 : 0.32),
+                      ),
+                    ),
+                  ),
+                )
+              else if (!unlocked)
+                Padding(
+                  padding: const EdgeInsets.only(right: 10),
+                  child: Icon(
+                    Icons.lock_rounded,
+                    size: 15,
+                    color: Colors.white.withValues(alpha: 0.30),
+                  ),
+                )
+              else if (anySelected)
+                  Padding(
+                    padding: const EdgeInsets.only(right: 10),
+                    child: Icon(
+                      Icons.check_rounded,
+                      size: 18,
+                      color: Colors.white.withValues(alpha: 0.85),
+                    ),
+                  ),
+            ],
           ),
         ),
       );
     }
 
-    Widget locationRow(FullVpnServerLocation s) {
+    Widget citySubRow(FullVpnServerLocation s) {
       final selected = s.id == widget.selectedServerId;
       final unlocked = _tab == "privacy" ? true : widget.isServerUnlocked(s);
-      final code = s.countryCode.toUpperCase();
+      final city = (s.city?.trim().isNotEmpty == true) ? s.city! : _countryName(s.countryCode);
 
       return InkWell(
         onTap: unlocked
@@ -397,76 +361,33 @@ class _FullVpnServerPickerSheetState extends State<FullVpnServerPickerSheet> {
         }
             : null,
         child: AnimatedOpacity(
-          duration: const Duration(milliseconds: 180),
-          opacity: unlocked ? 1 : 0.42,
-          child: AnimatedContainer(
-            duration: const Duration(milliseconds: 180),
-            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 12),
-            decoration: BoxDecoration(
-              color: selected
-                  ? _accentForTab(scheme, _tab).withValues(alpha: 0.10)
-                  : Colors.transparent,
-              borderRadius: BorderRadius.circular(14),
-            ),
+          duration: const Duration(milliseconds: 160),
+          opacity: unlocked ? 1.0 : 0.35,
+          child: Container(
+            padding: const EdgeInsets.only(left: 46, right: 10, top: 11, bottom: 11),
+            color: selected
+                ? Colors.white.withValues(alpha: 0.05)
+                : Colors.transparent,
             child: Row(
               children: [
-                CountryFlag.fromCountryCode(
-                  code,
-                  height: 20,
-                  width: 28,
-                ),
-                const SizedBox(width: 12),
                 Expanded(
-                  child: Row(
-                    children: [
-                      Flexible(
-                        child: Text(
-                          _countryName(code),
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          style: theme.textTheme.bodyLarge?.copyWith(
-                            fontWeight: selected ? FontWeight.w800 : FontWeight.w700,
-                            color: unlocked ? scheme.onSurface : scheme.onSurfaceVariant,
-                          ),
-                        ),
+                  child: Text(
+                    city,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: theme.textTheme.bodyMedium?.copyWith(
+                      fontWeight: selected ? FontWeight.w700 : FontWeight.w500,
+                      color: Colors.white.withValues(
+                        alpha: unlocked ? (selected ? 0.95 : 0.55) : 0.35,
                       ),
-                      if (s.city != null && s.city!.isNotEmpty) ...[
-                        const SizedBox(width: 8),
-                        Flexible(
-                          child: Text(
-                            s.city!,
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                            style: theme.textTheme.bodyMedium?.copyWith(
-                              color: unlocked
-                                  ? scheme.onSurfaceVariant.withValues(alpha: 0.92)
-                                  : scheme.onSurfaceVariant.withValues(alpha: 0.72),
-                              fontWeight: FontWeight.w600,
-                            ),
-                          ),
-                        ),
-                      ],
-                    ],
+                    ),
                   ),
                 ),
-                const SizedBox(width: 10),
-                if (!unlocked)
-                  Icon(
-                    Icons.lock_rounded,
-                    size: 18,
-                    color: scheme.onSurfaceVariant,
-                  )
-                else if (selected)
+                if (selected)
                   Icon(
                     Icons.check_rounded,
-                    size: 20,
-                    color: _accentForTab(scheme, _tab),
-                  )
-                else
-                  Icon(
-                    Icons.chevron_right_rounded,
-                    size: 20,
-                    color: scheme.onSurfaceVariant.withValues(alpha: 0.60),
+                    size: 16,
+                    color: Colors.white.withValues(alpha: 0.70),
                   ),
               ],
             ),
@@ -476,42 +397,57 @@ class _FullVpnServerPickerSheetState extends State<FullVpnServerPickerSheet> {
     }
 
     Widget locationsList() {
-      if (servers.isEmpty) {
-        return Container(
-          padding: const EdgeInsets.all(16),
-          decoration: BoxDecoration(
-            color: scheme.surface.withValues(alpha: 0.12),
-            borderRadius: BorderRadius.circular(18),
-            border: Border.all(
-              color: scheme.outlineVariant.withValues(alpha: 0.14),
-            ),
-          ),
+      if (_servers.isEmpty) {
+        return Padding(
+          padding: const EdgeInsets.symmetric(vertical: 20),
           child: Text(
             "No nodes available in this mode yet.",
             style: theme.textTheme.bodyMedium?.copyWith(
-              color: scheme.onSurfaceVariant,
-              fontWeight: FontWeight.w700,
+              color: Colors.white.withValues(alpha: 0.35),
+              fontWeight: FontWeight.w600,
             ),
           ),
         );
       }
 
-      return ListView.separated(
-        itemCount: servers.length,
-        shrinkWrap: true,
-        physics: const NeverScrollableScrollPhysics(),
-        padding: const EdgeInsets.symmetric(vertical: 4),
-        separatorBuilder: (_, __) {
-          return Padding(
-            padding: const EdgeInsets.only(left: 46),
-            child: Divider(
-              height: 1,
-              thickness: 1,
-              color: scheme.outlineVariant.withValues(alpha: 0.08),
-            ),
-          );
-        },
-        itemBuilder: (_, index) => locationRow(servers[index]),
+      final groups = _grouped();
+      final divider = Padding(
+        padding: const EdgeInsets.only(left: 46),
+        child: Divider(
+          height: 1,
+          thickness: 0.5,
+          color: Colors.white.withValues(alpha: 0.06),
+        ),
+      );
+      final subDivider = Padding(
+        padding: const EdgeInsets.only(left: 46),
+        child: Divider(
+          height: 1,
+          thickness: 0.5,
+          color: Colors.white.withValues(alpha: 0.04),
+        ),
+      );
+
+      final rows = <Widget>[];
+      for (int i = 0; i < groups.length; i++) {
+        final code = groups[i].key;
+        final group = groups[i].value;
+        final expanded = _expandedCountries.contains(code);
+
+        if (i > 0) rows.add(divider);
+        rows.add(groupHeaderRow(code, group));
+
+        if (group.length > 1 && expanded) {
+          for (final s in group) {
+            rows.add(subDivider);
+            rows.add(citySubRow(s));
+          }
+        }
+      }
+
+      return Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: rows,
       );
     }
 
@@ -521,90 +457,70 @@ class _FullVpnServerPickerSheetState extends State<FullVpnServerPickerSheet> {
       minChildSize: 0.46,
       maxChildSize: 0.92,
       builder: (_, controller) {
-        return Container(
-          decoration: BoxDecoration(
-            color: scheme.surfaceContainerHighest,
-            borderRadius: const BorderRadius.vertical(
-              top: Radius.circular(30),
-            ),
-          ),
-          child: ListView(
-            controller: controller,
-            padding: const EdgeInsets.fromLTRB(16, 12, 16, 26),
-            children: [
-              Center(
-                child: Container(
-                  width: 42,
-                  height: 4,
-                  decoration: BoxDecoration(
-                    color: scheme.outlineVariant.withValues(alpha: 0.30),
-                    borderRadius: BorderRadius.circular(999),
-                  ),
+        return ClipRRect(
+          borderRadius: const BorderRadius.vertical(top: Radius.circular(28)),
+          child: BackdropFilter(
+            filter: ImageFilter.blur(sigmaX: 28, sigmaY: 28),
+            child: Container(
+              decoration: BoxDecoration(
+                color: const Color(0xFF0B1220).withValues(alpha: 0.72),
+                borderRadius: const BorderRadius.vertical(top: Radius.circular(28)),
+                border: Border.all(
+                  color: Colors.white.withValues(alpha: 0.08),
+                  width: 0.5,
                 ),
               ),
-              const SizedBox(height: 14),
-              Row(
+              child: ListView(
+                controller: controller,
+                padding: const EdgeInsets.fromLTRB(16, 10, 16, 28),
                 children: [
-                  Expanded(
-                    child: Text(
-                      "Choose location",
-                      style: theme.textTheme.headlineSmall?.copyWith(
-                        fontWeight: FontWeight.w900,
-                        color: scheme.onSurface,
+                  Center(
+                    child: Container(
+                      width: 36,
+                      height: 3.5,
+                      decoration: BoxDecoration(
+                        color: Colors.white.withValues(alpha: 0.18),
+                        borderRadius: BorderRadius.circular(999),
                       ),
                     ),
                   ),
-                  IconButton(
-                    onPressed: () {
-                      setState(() {
-                        _showModeHint = !_showModeHint;
-                      });
-                    },
-                    icon: Icon(
-                      _showModeHint
-                          ? Icons.close_rounded
-                          : Icons.info_outline_rounded,
-                      color: scheme.onSurfaceVariant,
-                    ),
+                  const SizedBox(height: 16),
+                  Row(
+                    crossAxisAlignment: CrossAxisAlignment.center,
+                    children: [
+                      Expanded(
+                        child: Text(
+                          "Choose location",
+                          style: theme.textTheme.headlineSmall?.copyWith(
+                            fontWeight: FontWeight.w900,
+                            color: Colors.white,
+                            letterSpacing: -0.3,
+                          ),
+                        ),
+                      ),
+                      GestureDetector(
+                        onTap: () => setState(() => _showModeHint = !_showModeHint),
+                        child: Padding(
+                          padding: const EdgeInsets.only(left: 8),
+                          child: Icon(
+                            _showModeHint
+                                ? Icons.close_rounded
+                                : Icons.info_outline_rounded,
+                            color: Colors.white.withValues(alpha: 0.38),
+                            size: 20,
+                          ),
+                        ),
+                      ),
+                    ],
                   ),
+                  _modeHint(context),
+                  const SizedBox(height: 18),
+                  tabRow(),
+                  const SizedBox(height: 16),
+                  locationsList(),
                 ],
               ),
-              const SizedBox(height: 2),
-              Text(
-                "Pick the routing mode and location you want to use.",
-                style: theme.textTheme.bodyMedium?.copyWith(
-                  color: scheme.onSurfaceVariant,
-                  fontWeight: FontWeight.w600,
-                ),
-              ),
-              if (_showModeHint) _modeHintBubble(context),
-              const SizedBox(height: 16),
-              Row(
-                children: [
-                  tabButton(
-                    value: "privacy",
-                    label: "Privacy",
-                    locked: false,
-                  ),
-                  const SizedBox(width: 8),
-                  tabButton(
-                    value: "obfuscation",
-                    label: "Obfuscation",
-                    locked: false,
-                  ),
-                  const SizedBox(width: 8),
-                  tabButton(
-                    value: "stealth_plus",
-                    label: "Stealth+",
-                    locked: !widget.hasPro,
-                  ),
-                ],
-              ),
-              const SizedBox(height: 14),
-              searchField(),
-              const SizedBox(height: 14),
-              locationsList(),
-            ],
+            ),
           ),
         );
       },

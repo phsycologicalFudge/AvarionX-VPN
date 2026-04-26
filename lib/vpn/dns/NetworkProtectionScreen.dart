@@ -11,6 +11,8 @@ import '../../../services/dnsService/auth_service.dart';
 import '../../../services/service_manager.dart';
 import '../../../translations/app_localizations.dart';
 import '../Network_speed_test_screen.dart';
+import '../services/prefs/blocklist_prefs.dart';
+import 'PrivateDnsScreen.dart';
 import 'network_live_logs_screen.dart';
 import 'network_protection_models.dart';
 
@@ -25,14 +27,6 @@ class _NetworkAdvancedScreenState extends State<NetworkProtectionScreen> with Wi
   static const _deviceIdKey = 'dns_device_id';
   static const _prefNetEnabled = 'networkProtectionEnabled';
   static const _prefRtpEnabled = 'protectionEnabled';
-  static const _prefRecCsMalware = 'dns_cloud_rec_cs_malware';
-  static const _prefRecCsAds = 'dns_cloud_rec_cs_ads';
-  static const _prefMalware = 'dns_cloud_list_malware';
-  static const _prefAds = 'dns_cloud_list_ads';
-  static const _prefTrackers = 'dns_cloud_list_trackers';
-  static const _prefAdult = 'dns_cloud_list_adult';
-  static const _prefGambling = 'dns_cloud_list_gambling';
-  static const _prefSocial = 'dns_cloud_list_social';
 
   static const _prefCloudResolverChoice = 'dns_cloud_resolver_choice';
   static const _prefCloudResolverCustom = 'dns_cloud_resolver_custom';
@@ -179,14 +173,14 @@ class _NetworkAdvancedScreenState extends State<NetworkProtectionScreen> with Wi
     final rtp = prefs.getBool(_prefRtpEnabled) ?? false;
     final mode = prefs.getString(_kVpnMode) ?? 'off';
     final effectiveNet = rtp && net && mode == 'dns';
-    final r1 = prefs.getBool(_prefRecCsMalware) ?? false;
-    final r2 = prefs.getBool(_prefRecCsAds) ?? false;
-    final m = prefs.getBool(_prefMalware) ?? false;
-    final a = prefs.getBool(_prefAds) ?? false;
-    final t = prefs.getBool(_prefTrackers) ?? false;
-    final ad = prefs.getBool(_prefAdult) ?? false;
-    final g = prefs.getBool(_prefGambling) ?? false;
-    final s = prefs.getBool(_prefSocial) ?? false;
+    final r1 = prefs.getBool(BlocklistPrefs.recCsMalware) ?? false;
+    final r2 = prefs.getBool(BlocklistPrefs.recCsAds) ?? false;
+    final m = prefs.getBool(BlocklistPrefs.malware) ?? false;
+    final a = prefs.getBool(BlocklistPrefs.ads) ?? false;
+    final t = prefs.getBool(BlocklistPrefs.trackers) ?? false;
+    final ad = prefs.getBool(BlocklistPrefs.adult) ?? false;
+    final g = prefs.getBool(BlocklistPrefs.gambling) ?? false;
+    final s = prefs.getBool(BlocklistPrefs.social) ?? false;
 
     final rc = prefs.getString(_prefCloudResolverChoice) ?? 'cloudflare';
     final rcustom = prefs.getString(_prefCloudResolverCustom) ?? '';
@@ -262,15 +256,15 @@ class _NetworkAdvancedScreenState extends State<NetworkProtectionScreen> with Wi
     final prefs = await SharedPreferences.getInstance();
 
     await prefs.setBool(_prefNetEnabled, cloudEnabled);
-    await prefs.setBool(_prefRecCsMalware, recCsMalware);
-    await prefs.setBool(_prefRecCsAds, recCsAds);
+    await prefs.setBool(BlocklistPrefs.recCsMalware, recCsMalware);
+    await prefs.setBool(BlocklistPrefs.recCsAds, recCsAds);
 
-    await prefs.setBool(_prefMalware, listMalware);
-    await prefs.setBool(_prefAds, listAds);
-    await prefs.setBool(_prefTrackers, listTrackers);
-    await prefs.setBool(_prefAdult, listAdult);
-    await prefs.setBool(_prefGambling, listGambling);
-    await prefs.setBool(_prefSocial, listSocial);
+    await prefs.setBool(BlocklistPrefs.malware, listMalware);
+    await prefs.setBool(BlocklistPrefs.ads, listAds);
+    await prefs.setBool(BlocklistPrefs.trackers, listTrackers);
+    await prefs.setBool(BlocklistPrefs.adult, listAdult);
+    await prefs.setBool(BlocklistPrefs.gambling, listGambling);
+    await prefs.setBool(BlocklistPrefs.social, listSocial);
 
     await prefs.setString(_prefCloudResolverChoice, resolverChoice);
     await prefs.setString(_prefCloudResolverCustom, resolverCustom);
@@ -326,7 +320,7 @@ class _NetworkAdvancedScreenState extends State<NetworkProtectionScreen> with Wi
 
       try {
         await AvServiceManager.startProtection();
-        await AvServiceManager.startVpn(dnsMode: 'malware');
+        await AvServiceManager.startVpn();
       } catch (_) {
         await prefs.setBool(_prefNetEnabled, false);
         await prefs.setString('networkProtectionMode', 'off');
@@ -849,21 +843,20 @@ class _NetworkAdvancedScreenState extends State<NetworkProtectionScreen> with Wi
 
   Widget _sectionCard({required String title, required Widget child}) {
     final theme = Theme.of(context);
-    return Card(
-      elevation: 0,
-      color: theme.colorScheme.surfaceContainerHighest.withOpacity(0.28),
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
-      child: Padding(
-        padding: const EdgeInsets.all(14),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(title, style: theme.textTheme.titleSmall?.copyWith(fontWeight: FontWeight.w900)),
-            const SizedBox(height: 10),
-            child,
-          ],
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          title,
+          style: theme.textTheme.labelMedium?.copyWith(
+            color: theme.colorScheme.onSurfaceVariant,
+            fontWeight: FontWeight.w700,
+            letterSpacing: 0.3,
+          ),
         ),
-      ),
+        const SizedBox(height: 8),
+        child,
+      ],
     );
   }
 
@@ -915,31 +908,21 @@ class _NetworkAdvancedScreenState extends State<NetworkProtectionScreen> with Wi
       status = proBusy ? l10n.networkStatusConnecting : l10n.networkStatusConnected;
     }
 
-    final theme = Theme.of(context);
-
-    return Card(
-      elevation: 0,
-      color: theme.colorScheme.surfaceContainerHighest.withOpacity(0.28),
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
-      child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 18),
-        child: Row(
-          children: [
-            Expanded(
-              child: Text(
-                status,
-                style: text.titleMedium?.copyWith(
-                  fontWeight: FontWeight.w900,
-                ),
-              ),
+    return Row(
+      children: [
+        Expanded(
+          child: Text(
+            status,
+            style: text.titleMedium?.copyWith(
+              fontWeight: FontWeight.w900,
             ),
-            Switch(
-              value: cloudEnabled,
-              onChanged: proBusy ? null : (v) async => _setCloudEnabled(v),
-            ),
-          ],
+          ),
         ),
-      ),
+        Switch(
+          value: cloudEnabled,
+          onChanged: proBusy ? null : (v) async => _setCloudEnabled(v),
+        ),
+      ],
     );
   }
 
@@ -970,90 +953,144 @@ class _NetworkAdvancedScreenState extends State<NetworkProtectionScreen> with Wi
         : l10n.networkUsageUsedOf(_fmtInt(used), _fmtInt(limit)));
     final theme = Theme.of(context);
 
-    return _sectionCard(
-      title: l10n.networkUsageTitle,
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            children: [
-              Expanded(
-                child: Text(
-                  line,
-                  style: text.bodySmall?.copyWith(
-                    color: text.bodySmall?.color?.withOpacity(0.85),
-                  ),
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          children: [
+            Expanded(
+              child: Text(
+                l10n.networkUsageTitle,
+                style: theme.textTheme.labelMedium?.copyWith(
+                  color: theme.colorScheme.onSurfaceVariant,
+                  fontWeight: FontWeight.w700,
+                  letterSpacing: 0.3,
                 ),
               ),
-              if (cloudEnabled && effectivePlan == 'pro')
-                Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-                  decoration: BoxDecoration(
-                    color: theme.colorScheme.tertiary.withOpacity(0.18),
-                    borderRadius: BorderRadius.circular(999),
-                    border: Border.all(color: theme.colorScheme.tertiary.withOpacity(0.45), width: 1),
-                  ),
-                  child: Text(
-                    l10n.networkUsageUnlimited,
-                    style: text.labelSmall?.copyWith(
-                      fontWeight: FontWeight.w900,
-                      color: theme.colorScheme.tertiary,
-                    ),
-                  ),
-                )
-              else
-                IconButton(
+            ),
+            if (cloudEnabled && effectivePlan == 'pro')
+              const SizedBox.shrink()
+            else
+              SizedBox(
+                width: 36,
+                height: 36,
+                child: IconButton(
+                  padding: EdgeInsets.zero,
                   onPressed: _usageLoading ? null : () => _loadUsage(),
                   icon: _usageLoading
-                      ? const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2))
-                      : const Icon(Icons.refresh),
+                      ? const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2))
+                      : const Icon(Icons.refresh, size: 18),
                 ),
-            ],
-          ),
-          if (showBar) ...[
-            const SizedBox(height: 8),
-            TweenAnimationBuilder<double>(
-              tween: Tween<double>(begin: _usageFracPrev, end: frac),
-              duration: const Duration(milliseconds: 650),
-              builder: (context, v, _) {
-                final vv = v.isNaN ? 0.0 : v.clamp(0.0, 1.0);
-                return ClipRRect(
-                  borderRadius: BorderRadius.circular(999),
-                  child: LinearProgressIndicator(
-                    value: vv,
-                    minHeight: 10,
-                    backgroundColor: Colors.white10,
-                  ),
-                );
-              },
-            ),
+              ),
           ],
-          if ((resetLine.isNotEmpty || lastLine.isNotEmpty) && cloudEnabled) ...[
-            const SizedBox(height: 10),
-            Row(
-              children: [
-                if (resetLine.isNotEmpty)
-                  Expanded(
-                    child: Text(
-                      resetLine,
-                      style: text.bodySmall?.copyWith(
-                        color: text.bodySmall?.color?.withOpacity(0.75),
-                        height: 1.25,
-                      ),
-                    ),
-                  ),
-                if (lastLine.isNotEmpty)
-                  Text(
-                    lastLine,
+        ),
+        const SizedBox(height: 6),
+        Text(
+          line,
+          style: text.bodySmall?.copyWith(
+            color: text.bodySmall?.color?.withOpacity(0.85),
+          ),
+        ),
+        if (showBar) ...[
+          const SizedBox(height: 8),
+          TweenAnimationBuilder<double>(
+            tween: Tween<double>(begin: _usageFracPrev, end: frac),
+            duration: const Duration(milliseconds: 650),
+            builder: (context, v, _) {
+              final vv = v.isNaN ? 0.0 : v.clamp(0.0, 1.0);
+              return ClipRRect(
+                borderRadius: BorderRadius.circular(999),
+                child: LinearProgressIndicator(
+                  value: vv,
+                  minHeight: 6,
+                  backgroundColor: Colors.white10,
+                ),
+              );
+            },
+          ),
+        ],
+        if ((resetLine.isNotEmpty || lastLine.isNotEmpty) && cloudEnabled) ...[
+          const SizedBox(height: 8),
+          Row(
+            children: [
+              if (resetLine.isNotEmpty)
+                Expanded(
+                  child: Text(
+                    resetLine,
                     style: text.bodySmall?.copyWith(
-                      color: text.bodySmall?.color?.withOpacity(0.70),
+                      color: text.bodySmall?.color?.withOpacity(0.65),
                       height: 1.25,
                     ),
                   ),
-              ],
-            ),
-          ],
+                ),
+              if (lastLine.isNotEmpty)
+                Text(
+                  lastLine,
+                  style: text.bodySmall?.copyWith(
+                    color: text.bodySmall?.color?.withOpacity(0.55),
+                    height: 1.25,
+                  ),
+                ),
+            ],
+          ),
         ],
+      ],
+    );
+  }
+
+  Widget _privateDnsCard() {
+    final theme = Theme.of(context);
+    final text = theme.textTheme;
+
+    return InkWell(
+      borderRadius: BorderRadius.circular(18),
+      onTap: () {
+        final t = Theme.of(context);
+        Navigator.of(context).push(
+          MaterialPageRoute(
+            builder: (_) => Theme(
+              data: t,
+              child: const PrivateDnsScreen(),
+            ),
+          ),
+        );
+      },
+      child: Container(
+        decoration: BoxDecoration(
+          borderRadius: BorderRadius.circular(18),
+          border: Border.all(
+            color: Colors.white.withValues(alpha: 0.07),
+            width: 0.5,
+          ),
+        ),
+        padding: const EdgeInsets.all(16),
+        child: Row(
+          children: [
+            Icon(Icons.dns_outlined, size: 20, color: theme.colorScheme.onSurfaceVariant),
+            const SizedBox(width: 14),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    'Private DNS',
+                    style: text.titleSmall?.copyWith(fontWeight: FontWeight.w800),
+                  ),
+                  const SizedBox(height: 3),
+                  Text(
+                    'DNS filtering, no VPN required.',
+                    style: text.bodySmall?.copyWith(
+                      color: theme.colorScheme.onSurfaceVariant,
+                      height: 1.3,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(width: 8),
+            Icon(Icons.chevron_right, size: 18, color: theme.colorScheme.onSurfaceVariant),
+          ],
+        ),
       ),
     );
   }
@@ -1071,47 +1108,52 @@ class _NetworkAdvancedScreenState extends State<NetworkProtectionScreen> with Wi
 
     return Opacity(
       opacity: enabled ? 1.0 : 0.45,
-      child: Card(
-        elevation: 0,
-        color: theme.colorScheme.surfaceContainerHighest.withOpacity(0.22),
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
-        child: InkWell(
-          borderRadius: BorderRadius.circular(18),
-          onTap: enabled ? onTap : null,
-          child: Padding(
-            padding: const EdgeInsets.all(16),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Icon(icon, size: 22),
-                const SizedBox(height: 12),
-                Text(
-                  title,
-                  maxLines: 2,
+      child: InkWell(
+        borderRadius: BorderRadius.circular(18),
+        onTap: enabled ? onTap : null,
+        child: Container(
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(18),
+            border: Border.all(
+              color: Colors.white.withValues(alpha: 0.07),
+              width: 0.5,
+            ),
+          ),
+          padding: const EdgeInsets.all(16),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Icon(icon, size: 20, color: theme.colorScheme.onSurfaceVariant),
+              const SizedBox(height: 12),
+              Text(
+                title,
+                maxLines: 2,
+                overflow: TextOverflow.ellipsis,
+                style: text.titleSmall?.copyWith(fontWeight: FontWeight.w800),
+              ),
+              const SizedBox(height: 4),
+              Expanded(
+                child: Text(
+                  subtitle,
+                  maxLines: 3,
                   overflow: TextOverflow.ellipsis,
-                  style: text.titleMedium?.copyWith(fontWeight: FontWeight.w900),
-                ),
-                const SizedBox(height: 6),
-                Expanded(
-                  child: Text(
-                    subtitle,
-                    maxLines: 3,
-                    overflow: TextOverflow.ellipsis,
-                    style: text.bodySmall?.copyWith(
-                      color: text.bodySmall?.color?.withOpacity(0.78),
-                      height: 1.25,
-                    ),
+                  style: text.bodySmall?.copyWith(
+                    color: theme.colorScheme.onSurfaceVariant,
+                    height: 1.3,
                   ),
                 ),
-                const SizedBox(height: 8),
-                Text(
-                  status,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: text.bodySmall?.copyWith(fontWeight: FontWeight.w900),
+              ),
+              const SizedBox(height: 8),
+              Text(
+                status,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: text.labelSmall?.copyWith(
+                  fontWeight: FontWeight.w700,
+                  color: theme.colorScheme.onSurfaceVariant,
                 ),
-              ],
-            ),
+              ),
+            ],
           ),
         ),
       ),
@@ -1153,32 +1195,19 @@ class _NetworkAdvancedScreenState extends State<NetworkProtectionScreen> with Wi
                 style: text.titleLarge?.copyWith(fontWeight: FontWeight.w900),
               ),
               const SizedBox(height: 10),
-              Card(
-                elevation: 0,
-                color: scheme.surfaceContainerHighest.withOpacity(0.28),
-                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
-                child: Padding(
-                  padding: const EdgeInsets.all(14),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        l10n.networkDnsOffInfoTitle,
-                        style: text.titleSmall?.copyWith(fontWeight: FontWeight.w900),
-                      ),
-                      const SizedBox(height: 10),
-                      Text(
-                        l10n.networkDnsOffInfoBody1,
-                        style: text.bodySmall?.copyWith(color: scheme.onSurfaceVariant),
-                      ),
-                      const SizedBox(height: 8),
-                      Text(
-                        l10n.networkDnsOffInfoBody2,
-                        style: text.bodySmall?.copyWith(color: scheme.onSurfaceVariant),
-                      ),
-                    ],
-                  ),
-                ),
+              Text(
+                l10n.networkDnsOffInfoTitle,
+                style: text.titleSmall?.copyWith(fontWeight: FontWeight.w900),
+              ),
+              const SizedBox(height: 10),
+              Text(
+                l10n.networkDnsOffInfoBody1,
+                style: text.bodySmall?.copyWith(color: scheme.onSurfaceVariant, height: 1.4),
+              ),
+              const SizedBox(height: 8),
+              Text(
+                l10n.networkDnsOffInfoBody2,
+                style: text.bodySmall?.copyWith(color: scheme.onSurfaceVariant, height: 1.4),
               ),
               const SizedBox(height: 14),
               SizedBox(
@@ -1225,20 +1254,20 @@ class _NetworkAdvancedScreenState extends State<NetworkProtectionScreen> with Wi
     return SafeArea(
       child: cloudEnabled
           ? SingleChildScrollView(
-        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+        padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             _vpnCard(Theme.of(context).textTheme),
+            const SizedBox(height: 20),
+            Divider(height: 1, thickness: 0.5, color: Theme.of(context).dividerColor.withOpacity(0.25)),
             const SizedBox(height: 12),
             _usageCard(Theme.of(context).textTheme),
+            const SizedBox(height: 12),
+            Divider(height: 1, thickness: 0.5, color: Theme.of(context).dividerColor.withOpacity(0.25)),
             const SizedBox(height: 14),
-            Divider(
-              height: 1,
-              thickness: 1,
-              color: Theme.of(context).dividerColor.withOpacity(0.35),
-            ),
-            const SizedBox(height: 14),
+            _privateDnsCard(),
+            const SizedBox(height: 12),
             GridView.count(
               crossAxisCount: 2,
               shrinkWrap: true,
@@ -1291,7 +1320,35 @@ class _NetworkAdvancedScreenState extends State<NetworkProtectionScreen> with Wi
           ],
         ),
       )
-          : _dnsOffEmptyState(context),
+          : Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          _dnsOffEmptyState(context),
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 20),
+            child: Row(
+              children: [
+                const Expanded(child: Divider()),
+                Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 12),
+                  child: Text(
+                    'or',
+                    style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                      color: Theme.of(context).colorScheme.onSurfaceVariant,
+                    ),
+                  ),
+                ),
+                const Expanded(child: Divider()),
+              ],
+            ),
+          ),
+          const SizedBox(height: 16),
+          Padding(
+            padding: const EdgeInsets.fromLTRB(20, 0, 20, 20),
+            child: _privateDnsCard(),
+          ),
+        ],
+      ),
     );
   }
 }
