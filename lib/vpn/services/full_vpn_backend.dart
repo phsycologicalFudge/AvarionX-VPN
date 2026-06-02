@@ -1203,55 +1203,54 @@ class FullVpnController extends ChangeNotifier {
     notifyListeners();
   }
 
+  bool _isSyncing = false;
+
   Future<void> _syncWithRuntime() async {
-    final running = await _isTunnelRunning();
-    final changed = _connected != running;
+    if (_isSyncing) return;
+    _isSyncing = true;
 
-    _connected = running;
+    try {
+      final running = await _isTunnelRunning();
+      final changed = _connected != running;
 
-    if (changed && _connected) {
-      _connectedAt = DateTime.now();
-      _loc = null;
-      _locFetchedAt = null;
-      _connectingUi = true;
-      _status = "Securing connection...";
-      notifyListeners();
-      unawaited(soundController.playConnect());
-      await _postConnectRefresh();
-      return;
-    }
+      _connected = running;
 
-    if (changed && !_connected) {
-      _connectedAt = null;
-      unawaited(soundController.playDisconnect());
-      notifyListeners();
-      return;
-    }
+      if (changed && _connected) {
+        _connectedAt = DateTime.now();
+        _loc = null;
+        _locFetchedAt = null;
+        _connectingUi = true;
+        _status = "Securing connection...";
+        notifyListeners();
+        unawaited(soundController.playConnect());
+        await _postConnectRefresh();
+        return;
+      }
 
-    if (!_connected && _connectingUi && !_busy) {
-      final started = _connectStartedAt;
-      if (started == null) {
-        _connectingUi = false;
-      } else {
-        final ageMs = DateTime.now().difference(started).inMilliseconds;
-        if (ageMs > 9000) {
+      if (changed && !_connected) {
+        _connectedAt = null;
+        unawaited(soundController.playDisconnect());
+        notifyListeners();
+        return;
+      }
+
+      if (!_connected && _connectingUi && !_busy) {
+        final started = _connectStartedAt;
+        if (started == null) {
           _connectingUi = false;
-          _connectStartedAt = null;
+        } else {
+          final ageMs = DateTime.now().difference(started).inMilliseconds;
+          if (ageMs > 9000) {
+            _connectingUi = false;
+            _connectStartedAt = null;
+          }
         }
       }
-    }
 
-    if (_connected) {
-      if (_usageTimer == null) _startUsagePolling();
-      if (_probeTimer == null) _startProbePolling();
-      if (_statsTimer == null) _startStatsPolling();
-    } else {
-      if (_usageTimer != null) _stopUsagePolling();
-      if (_probeTimer != null) _stopProbePolling();
-      if (_statsTimer != null) _stopStatsPolling();
+      if (changed) notifyListeners();
+    } finally {
+      _isSyncing = false;
     }
-
-    if (changed) notifyListeners();
   }
 
   Future<bool> _requestVpnPermission() async {

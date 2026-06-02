@@ -69,7 +69,7 @@ class _FullVpnLocationMapCardState extends State<FullVpnLocationMapCard>
   double _toZoom = 2.0;
 
   static const double _minZoom = 2.2;
-  static const double _maxZoom = 6.2;
+  static const double _maxZoom = 3.6;
 
   static final LatLngBounds _worldBounds = LatLngBounds(
     const LatLng(-85.0, -180.0),
@@ -172,11 +172,11 @@ class _FullVpnLocationMapCardState extends State<FullVpnLocationMapCard>
 
   double _focusZoom() {
     final s = _selectedServer();
-    if (!widget.connected && s != null) return 4.8;
-    if (widget.isConnecting && _hasIpPoint && s != null) return 2.8;
-    if (widget.connected && s != null) return 5.6;
-    if (_hasIpPoint) return 3.4;
-    return 1.6;
+    if (!widget.connected && s != null) return 3.4;
+    if (widget.isConnecting && _hasIpPoint && s != null) return 3.2;
+    if (widget.connected && s != null) return 3.6;
+    if (_hasIpPoint) return 3.2;
+    return 2.8;
   }
 
   @override
@@ -693,7 +693,7 @@ class _FullVpnLocationMapCardState extends State<FullVpnLocationMapCard>
                     minZoom: _minZoom,
                     maxZoom: _maxZoom,
                     backgroundColor: const Color(0xFF0B1626),
-                    cameraConstraint: CameraConstraint.contain(bounds: _worldBounds),
+                    cameraConstraint: CameraConstraint.containCenter(bounds: _worldBounds),
                     interactionOptions: const InteractionOptions(
                       flags: InteractiveFlag.drag |
                       InteractiveFlag.pinchZoom |
@@ -704,7 +704,6 @@ class _FullVpnLocationMapCardState extends State<FullVpnLocationMapCard>
                       if ((_mapZoom - zoom).abs() > 0.05) {
                         setState(() => _mapZoom = zoom);
                       }
-
                       if (e is MapEventMoveEnd) {
                         if (_snapshotVisible) {
                           setState(() => _snapshotVisible = false);
@@ -733,8 +732,6 @@ class _FullVpnLocationMapCardState extends State<FullVpnLocationMapCard>
                         urlTemplate: 'https://{s}.basemaps.cartocdn.com/dark_nolabels/{z}/{x}/{y}{r}.png',
                         subdomains: const ['a', 'b', 'c', 'd'],
                         userAgentPackageName: 'com.colourswift.avarionxvpn',
-                        maxZoom: _maxZoom,
-                        maxNativeZoom: 6,
                         keepBuffer: 6,
                         tileProvider: tileProvider,
                         tileDisplay: const TileDisplay.instantaneous(),

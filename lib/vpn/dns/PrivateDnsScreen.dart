@@ -5,6 +5,8 @@ import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
 import '../services/prefs/blocklist_prefs.dart';
 import '../../services/purchase_service.dart';
+import 'dart:io';
+import 'package:path_provider/path_provider.dart';
 
 const _basicHostname = 'basic.dns.colourswift.com';
 const _prefDnsHostname = 'cs_private_dns_hostname';
@@ -159,19 +161,125 @@ class _PrivateDnsScreenState extends State<PrivateDnsScreen>
   Future<void> _pushSettings({bool showSnackbar = true}) async {
     final prefs = await SharedPreferences.getInstance();
     final token = prefs.getString('cs_auth_token') ?? '';
-    if (token.isEmpty) return;
-    final resp = await http.post(
-      Uri.parse('$_apiBase/dns/settings'),
-      headers: {
-        'authorization': 'Bearer $token',
-        'content-type': 'application/json',
-      },
-      body: jsonEncode({'settings_b64': _buildSettingsB64()}),
-    ).timeout(const Duration(seconds: 10));
-    if (!showSnackbar || !mounted) return;
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text(resp.statusCode == 200 ? 'Settings saved' : 'Failed to save settings')),
-    );
+    final hostname = prefs.getString(_prefDnsHostname) ?? '';
+
+    if (token.isEmpty) {
+      await _writeDnsDebugLog(
+        'save_settings skipped token_present=false cached_hostname_present=${hostname.isNotEmpty}',
+      );
+      return;
+    }
+
+    try {
+      final resp = await http.post(
+        Uri.parse('$_apiBase/dns/settings'),
+        headers: {
+          'authorization': 'Bearer $token',
+          'content-type': 'application/json',
+        },
+        body: jsonEncode({'settings_b64': _buildSettingsB64()}),
+      ).timeout(const Duration(seconds: 10));
+
+      final ok = resp.statusCode >= 200 && resp.statusCode < 300;
+      final safeError = ok ? 'none' : _safeApiError(resp.body);
+
+      if (ok) {
+        try {
+          final data = jsonDecode(resp.body);
+          if (data is Map<String, dynamic>) {
+            final returnedHostname = data['hostname'];
+            if (returnedHostname is String && returnedHostname.trim().isNotEmpty) {
+              final cleanHostname = returnedHostname.trim();
+              await prefs.setString(_prefDnsHostname, cleanHostname);
+              if (mounted) {
+                setState(() => _personalHostname = cleanHostname);
+              }
+            }
+          }
+        } catch (_) {}
+      }
+
+      await _writeDnsDebugLog(
+        'save_settings endpoint=/dns/settings status=${resp.statusCode} ok=$ok error=$safeError token_present=true token_len=${token.length} cached_hostname_present=${hostname.isNotEmpty} selected_lists=${_lists.entries.where((e) => e.value).map((e) => e.key).join(",")} advanced_mode=$_advancedMode',
+      );
+
+      if (!showSnackbar || !mounted) return;
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            ok ? 'Settings saved' : 'Failed to save settings ($safeError)',
+          ),
+        ),
+      );
+    } catch (e) {
+      await _writeDnsDebugLog(
+        'save_settings_exception exception=${e.runtimeType} message=${e.toString()}',
+      );
+      rethrow;
+    }
+  }
+
+  Future<void> _writeDnsDebugLog(String message) async {
+    final now = DateTime.now().toIso8601String();
+    final line = '[$now] $message\n';
+
+    final paths = <String>[
+      '/storage/emulated/0/Download/avarionx_private_dns_debug.txt',
+      '/sdcard/Download/avarionx_private_dns_debug.txt',
+    ];
+
+    try {
+      final appDir = await getExternalStorageDirectory();
+      if (appDir != null) {
+        paths.add('${appDir.path}/avarionx_private_dns_debug.txt');
+        paths.add('${appDir.path}/Documents/avarionx_private_dns_debug.txt');
+      }
+    } catch (_) {}
+
+    String lastError = '';
+
+    for (final path in paths) {
+      try {
+        final file = File(path);
+        final parent = file.parent;
+
+        if (!await parent.exists()) {
+          await parent.create(recursive: true);
+        }
+
+        await file.writeAsString(line, mode: FileMode.append, flush: true);
+
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text('DNS debug saved: $path')),
+          );
+        }
+
+        return;
+      } catch (e) {
+        lastError = '$path -> ${e.runtimeType}: $e';
+      }
+    }
+
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('DNS debug failed: $lastError')),
+      );
+    }
+  }
+
+  String _safeApiError(String body) {
+    try {
+      final data = jsonDecode(body);
+      if (data is Map<String, dynamic>) {
+        final error = data['error'];
+        if (error is String && error.trim().isNotEmpty) {
+          return error.trim();
+        }
+      }
+    } catch (_) {}
+    return body.trim().isEmpty ? 'empty_body' : 'non_json_body';
   }
 
   Future<void> _saveSettings() async {

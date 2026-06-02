@@ -3,6 +3,7 @@ import 'package:intl/intl.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../../services/purchase_service.dart';
 import '../../../translations/app_localizations.dart';
+import '../services/gradients/full_vpn_gradient_service.dart';
 
 enum VpnProPlanType { yearly, monthly }
 
@@ -205,7 +206,7 @@ class _FullVpnUpgradeScreenState extends State<FullVpnUpgradeScreen> {
   Widget _buildFeatureRow(BuildContext context, String title, String subtitle) {
     final theme = Theme.of(context);
     return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 12),
+      padding: const EdgeInsets.symmetric(vertical: 5),
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.center,
         children: [
@@ -216,26 +217,28 @@ class _FullVpnUpgradeScreenState extends State<FullVpnUpgradeScreen> {
                 Text(
                   title,
                   style: theme.textTheme.titleMedium?.copyWith(
-                    fontWeight: FontWeight.w800,
+                    fontWeight: FontWeight.w700,
                     color: Colors.white,
+                    fontSize: 15,
                   ),
                 ),
-                const SizedBox(height: 4),
+                const SizedBox(height: 2),
                 Text(
                   subtitle,
                   style: theme.textTheme.bodyMedium?.copyWith(
                     color: Colors.white70,
-                    height: 1.3,
+                    height: 1.25,
+                    fontSize: 13,
                   ),
                 ),
               ],
             ),
           ),
-          const SizedBox(width: 16),
+          const SizedBox(width: 12),
           const Icon(
             Icons.check_circle_outline_rounded,
             color: Colors.white54,
-            size: 28,
+            size: 24,
           ),
         ],
       ),
@@ -260,15 +263,15 @@ class _FullVpnUpgradeScreenState extends State<FullVpnUpgradeScreen> {
         onTap: isCurrent ? null : () => setState(() => _selected = type),
         child: AnimatedContainer(
           duration: const Duration(milliseconds: 200),
-          padding: const EdgeInsets.all(16),
+          padding: const EdgeInsets.all(12),
           decoration: BoxDecoration(
             color: isSelected
                 ? Colors.white.withOpacity(0.1)
                 : Colors.white.withOpacity(0.03),
-            borderRadius: BorderRadius.circular(16),
+            borderRadius: BorderRadius.circular(14),
             border: Border.all(
               color: isSelected
-                  ? Colors.blueAccent.withOpacity(0.8)
+                  ? Theme.of(context).colorScheme.primary.withOpacity(0.8)
                   : Colors.white.withOpacity(0.1),
               width: isSelected ? 2 : 1,
             ),
@@ -284,15 +287,16 @@ class _FullVpnUpgradeScreenState extends State<FullVpnUpgradeScreen> {
                     style: theme.textTheme.titleSmall?.copyWith(
                       color: Colors.white,
                       fontWeight: FontWeight.w600,
+                      fontSize: 14,
                     ),
                   ),
                   if (isSelected)
-                    const Icon(Icons.check_circle, color: Colors.blueAccent, size: 18)
+                    Icon(Icons.check_circle, color: Theme.of(context).colorScheme.primary, size: 16)
                   else if (isCurrent)
                     Text("Current", style: theme.textTheme.labelSmall?.copyWith(color: Colors.grey))
                   else if (discountBadge != null)
                       Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                        padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 2),
                         decoration: BoxDecoration(
                           color: Colors.white,
                           borderRadius: BorderRadius.circular(4),
@@ -307,7 +311,7 @@ class _FullVpnUpgradeScreenState extends State<FullVpnUpgradeScreen> {
                       ),
                 ],
               ),
-              const SizedBox(height: 12),
+              const SizedBox(height: 8),
               if (crossedOutPrice != null)
                 Text(
                   crossedOutPrice,
@@ -322,14 +326,16 @@ class _FullVpnUpgradeScreenState extends State<FullVpnUpgradeScreen> {
                 style: theme.textTheme.headlineSmall?.copyWith(
                   color: Colors.white,
                   fontWeight: FontWeight.w900,
+                  fontSize: 20,
                 ),
               ),
-              const SizedBox(height: 4),
+              const SizedBox(height: 2),
               Text(
                 subtitleStr,
                 style: theme.textTheme.bodySmall?.copyWith(
                   color: Colors.white60,
-                  height: 1.2,
+                  height: 1.15,
+                  fontSize: 12,
                 ),
               ),
             ],
@@ -380,21 +386,14 @@ class _FullVpnUpgradeScreenState extends State<FullVpnUpgradeScreen> {
             height: 300,
             child: Container(
               decoration: BoxDecoration(
-                gradient: LinearGradient(
-                  begin: Alignment.topCenter,
-                  end: Alignment.bottomCenter,
-                  colors: [
-                    Colors.blueAccent.withOpacity(0.2),
-                    const Color(0xFF0B101E),
-                  ],
-                ),
+                gradient: FullVpnGradientService.getDynamicBackground(context),
               ),
             ),
           ),
 
           SafeArea(
             child: SingleChildScrollView(
-              padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
+              padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 8),
               physics: const BouncingScrollPhysics(),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
@@ -402,9 +401,17 @@ class _FullVpnUpgradeScreenState extends State<FullVpnUpgradeScreen> {
                   Center(
                     child: Column(
                       children: [
-                        const SizedBox(height: 20),
-                        Icon(Icons.rocket_launch_rounded, size: 80, color: Colors.blueAccent.shade100),
-                        const SizedBox(height: 16),
+                        const SizedBox(height: 12),
+                        ClipRRect(
+                          borderRadius: BorderRadius.circular(18),
+                          child: Image.asset(
+                            'assets/icons/icon.png',
+                            width: 72,
+                            height: 72,
+                            fit: BoxFit.cover,
+                          ),
+                        ),
+                        const SizedBox(height: 10),
                         Row(
                           mainAxisAlignment: MainAxisAlignment.center,
                           children: [
@@ -414,19 +421,21 @@ class _FullVpnUpgradeScreenState extends State<FullVpnUpgradeScreen> {
                                 color: Colors.white,
                                 fontWeight: FontWeight.w900,
                                 letterSpacing: -0.5,
+                                fontSize: 24,
                               ),
                             ),
                             Container(
-                              padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                              padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 2),
                               decoration: BoxDecoration(
                                 border: Border.all(color: Colors.white, width: 1.5),
-                                borderRadius: BorderRadius.circular(6),
+                                borderRadius: BorderRadius.circular(5),
                               ),
                               child: Text(
                                 "PRO",
                                 style: theme.textTheme.titleSmall?.copyWith(
                                   color: Colors.white,
                                   fontWeight: FontWeight.w900,
+                                  fontSize: 12,
                                 ),
                               ),
                             ),
@@ -435,7 +444,7 @@ class _FullVpnUpgradeScreenState extends State<FullVpnUpgradeScreen> {
                       ],
                     ),
                   ),
-                  const SizedBox(height: 40),
+                  const SizedBox(height: 18),
 
                   _buildFeatureRow(
                       context,
@@ -462,7 +471,7 @@ class _FullVpnUpgradeScreenState extends State<FullVpnUpgradeScreen> {
                       'AvarionX Antivirus',
                       'Unlock scheduled scans and advanced customisation for complete device protection.'
                   ),
-                  const SizedBox(height: 30),
+                  const SizedBox(height: 16),
 
                   Row(
                     children: [
@@ -473,7 +482,7 @@ class _FullVpnUpgradeScreenState extends State<FullVpnUpgradeScreen> {
                         priceStr: _monthlyInfo?.formattedPrice ?? '-',
                         subtitleStr: 'Billed Monthly',
                       ),
-                      const SizedBox(width: 12),
+                      const SizedBox(width: 10),
                       _buildPlanCard(
                         context: context,
                         type: VpnProPlanType.yearly,
@@ -487,35 +496,31 @@ class _FullVpnUpgradeScreenState extends State<FullVpnUpgradeScreen> {
                       ),
                     ],
                   ),
-                  const SizedBox(height: 24),
+                  const SizedBox(height: 18),
 
                   Container(
                     width: double.infinity,
-                    height: 56,
+                    height: 52,
                     decoration: BoxDecoration(
-                      borderRadius: BorderRadius.circular(28),
-                      gradient: const LinearGradient(
-                        colors: [Color(0xFFE2D6FF), Color(0xFFC1F1FF)],
-                        begin: Alignment.centerLeft,
-                        end: Alignment.centerRight,
-                      ),
+                      borderRadius: BorderRadius.circular(26),
+                      gradient: FullVpnGradientService.getDynamicButtonGradient(context),
                       boxShadow: [
                         BoxShadow(
-                          color: Colors.white.withOpacity(0.1),
-                          blurRadius: 20,
-                          offset: const Offset(0, 5),
+                          color: Theme.of(context).colorScheme.primary.withOpacity(0.15),
+                          blurRadius: 16,
+                          offset: const Offset(0, 4),
                         ),
                       ],
                     ),
                     child: Material(
                       color: Colors.transparent,
                       child: InkWell(
-                        borderRadius: BorderRadius.circular(28),
+                        borderRadius: BorderRadius.circular(26),
                         onTap: (_buying || _isSelectedCurrentPlan()) ? null : _buySelected,
                         child: Center(
                           child: _buying
                               ? const SizedBox(
-                            height: 24, width: 24,
+                            height: 22, width: 22,
                             child: CircularProgressIndicator(strokeWidth: 3, color: Colors.black87),
                           )
                               : Column(
@@ -524,17 +529,19 @@ class _FullVpnUpgradeScreenState extends State<FullVpnUpgradeScreen> {
                               Text(
                                 _isSelectedCurrentPlan() ? 'Current plan' : 'Subscribe',
                                 style: theme.textTheme.titleMedium?.copyWith(
-                                  color: Colors.black,
+                                  color: Theme.of(context).colorScheme.onPrimaryContainer,
                                   fontWeight: FontWeight.w900,
-                                  letterSpacing: 0.5,
+                                  letterSpacing: 0.3,
+                                  fontSize: 16,
                                 ),
                               ),
                               if (hasTrialForSelected && !_isSelectedCurrentPlan())
                                 Text(
                                   "7 Days Free, then ${_selected == VpnProPlanType.yearly ? _yearlyInfo?.formattedPrice : _monthlyInfo?.formattedPrice}",
                                   style: theme.textTheme.labelSmall?.copyWith(
-                                    color: Colors.black87,
+                                    color: Theme.of(context).colorScheme.onPrimaryContainer.withOpacity(0.85),
                                     fontWeight: FontWeight.w600,
+                                    fontSize: 11,
                                   ),
                                 ),
                             ],
@@ -543,7 +550,7 @@ class _FullVpnUpgradeScreenState extends State<FullVpnUpgradeScreen> {
                       ),
                     ),
                   ),
-                  const SizedBox(height: 20),
+                  const SizedBox(height: 14),
 
                   Text(
                     "Subscriptions may be managed monthly, yearly or turned off by going to the Play Store Account Settings after purchase. All prices include applicable taxes.",
@@ -551,10 +558,10 @@ class _FullVpnUpgradeScreenState extends State<FullVpnUpgradeScreen> {
                     style: theme.textTheme.bodySmall?.copyWith(
                       color: Colors.white38,
                       fontSize: 10,
-                      height: 1.4,
+                      height: 1.3,
                     ),
                   ),
-                  const SizedBox(height: 20),
+                  const SizedBox(height: 12),
                 ],
               ),
             ),

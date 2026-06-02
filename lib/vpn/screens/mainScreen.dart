@@ -996,7 +996,7 @@ class _FullVpnModeScreenState extends State<FullVpnModeScreen>
         if (!_hasAnyProEntitlement()) ...[
           const SizedBox(height: 8),
           Text(
-            "Free access connects automatically to a standard server. Premium gives you manual location selection and extra connection options.",
+            "Upgrade to premium for manual server selection",
             style: theme.textTheme.bodySmall?.copyWith(
               color: scheme.onSurfaceVariant,
               fontWeight: FontWeight.w700,
@@ -1009,67 +1009,69 @@ class _FullVpnModeScreenState extends State<FullVpnModeScreen>
     return Stack(
       children: [
         Positioned.fill(
-          child: AnimatedSwitcher(
-            duration: const Duration(milliseconds: 420),
-            reverseDuration: const Duration(milliseconds: 320),
-            switchInCurve: Curves.easeOutCubic,
-            switchOutCurve: Curves.easeInCubic,
-            layoutBuilder: (currentChild, previousChildren) {
-              return Stack(
-                fit: StackFit.expand,
-                children: [
-                  ...previousChildren,
-                  if (currentChild != null) currentChild,
-                ],
-              );
-            },
-            transitionBuilder: (child, animation) {
-              final fade = CurvedAnimation(
-                parent: animation,
-                curve: Curves.easeOutCubic,
-              );
-
-              final scale = Tween<double>(
-                begin: 0.985,
-                end: 1.0,
-              ).animate(fade);
-
-              return FadeTransition(
-                opacity: fade,
-                child: ScaleTransition(
-                  scale: scale,
-                  child: child,
-                ),
-              );
-            },
-            child: _mapView == "globe"
-                ? FullVpnGlobeCard(
-              key: const ValueKey("globe"),
-              lat: lat,
-              lon: lon,
-              connected: c.connected,
-              isConnecting: c.connectingUi,
-              headerText: mapHeader,
-              servers: c.servers,
-              selectedServerId: _effectiveServerId,
-              onServerTap: (s) {
-                c.selectServerPreview(s);
+          child: RepaintBoundary(
+            child: AnimatedSwitcher(
+              duration: const Duration(milliseconds: 420),
+              reverseDuration: const Duration(milliseconds: 320),
+              switchInCurve: Curves.easeOutCubic,
+              switchOutCurve: Curves.easeInCubic,
+              layoutBuilder: (currentChild, previousChildren) {
+                return Stack(
+                  fit: StackFit.expand,
+                  children: [
+                    ...previousChildren,
+                    if (currentChild != null) currentChild,
+                  ],
+                );
               },
-              showFlagMarkers: c.showFlagMarkers,
-            )
-                : FullVpnLocationMapCard(
-              key: const ValueKey("flat"),
-              lat: lat,
-              lon: lon,
-              connected: c.connected,
-              isConnecting: c.connectingUi,
-              headerText: mapHeader,
-              servers: c.servers,
-              selectedServerId: _effectiveServerId,
-              onServerTap: (s) {
-                c.selectServerPreview(s);
+              transitionBuilder: (child, animation) {
+                final fade = CurvedAnimation(
+                  parent: animation,
+                  curve: Curves.easeOutCubic,
+                );
+
+                final scale = Tween<double>(
+                  begin: 0.985,
+                  end: 1.0,
+                ).animate(fade);
+
+                return FadeTransition(
+                  opacity: fade,
+                  child: ScaleTransition(
+                    scale: scale,
+                    child: child,
+                  ),
+                );
               },
-              showFlagMarkers: c.showFlagMarkers,
+              child: _mapView == "globe"
+                  ? FullVpnGlobeCard(
+                key: const ValueKey("globe"),
+                lat: lat,
+                lon: lon,
+                connected: c.connected,
+                isConnecting: c.connectingUi,
+                headerText: mapHeader,
+                servers: c.servers,
+                selectedServerId: _effectiveServerId,
+                onServerTap: (s) {
+                  c.selectServerPreview(s);
+                },
+                showFlagMarkers: c.showFlagMarkers,
+              )
+                  : FullVpnLocationMapCard(
+                key: const ValueKey("flat"),
+                lat: lat,
+                lon: lon,
+                connected: c.connected,
+                isConnecting: c.connectingUi,
+                headerText: mapHeader,
+                servers: c.servers,
+                selectedServerId: _effectiveServerId,
+                onServerTap: (s) {
+                  c.selectServerPreview(s);
+                },
+                showFlagMarkers: c.showFlagMarkers,
+              ),
             ),
           ),
         ),
@@ -1087,54 +1089,56 @@ class _FullVpnModeScreenState extends State<FullVpnModeScreen>
           bottom: 12,
           child: SafeArea(
             top: false,
-            child: AnimatedBuilder(
-              animation: _glowCtrl,
-              builder: (context, _) {
-                final t = _glowCtrl.value;
-                final a = (t * 2) - 1;
+            child: RepaintBoundary(
+              child: AnimatedBuilder(
+                animation: _glowCtrl,
+                builder: (context, _) {
+                  final t = _glowCtrl.value;
+                  final a = (t * 2) - 1;
 
-                return ClipRRect(
-                  borderRadius: BorderRadius.circular(24),
-                  child: BackdropFilter(
-                    filter: ui.ImageFilter.blur(sigmaX: 18, sigmaY: 18),
-                    child: Container(
-                      decoration: BoxDecoration(
-                        borderRadius: BorderRadius.circular(24),
-                        border: Border.all(
-                          color: scheme.outlineVariant.withValues(alpha: 0.22),
-                        ),
-                        gradient: LinearGradient(
-                          begin: Alignment(-1 + a, -1),
-                          end: Alignment(1 + a, 1),
-                          colors: [
-                            scheme.primaryContainer.withValues(alpha: 0.18),
-                            scheme.surfaceContainerHighest.withValues(alpha: 0.82),
-                            scheme.primaryContainer.withValues(alpha: 0.14),
+                  return ClipRRect(
+                    borderRadius: BorderRadius.circular(24),
+                    child: BackdropFilter(
+                      filter: ui.ImageFilter.blur(sigmaX: 18, sigmaY: 18),
+                      child: Container(
+                        decoration: BoxDecoration(
+                          borderRadius: BorderRadius.circular(24),
+                          border: Border.all(
+                            color: scheme.outlineVariant.withValues(alpha: 0.22),
+                          ),
+                          gradient: LinearGradient(
+                            begin: Alignment(-1 + a, -1),
+                            end: Alignment(1 + a, 1),
+                            colors: [
+                              scheme.primaryContainer.withValues(alpha: 0.18),
+                              scheme.surfaceContainerHighest.withValues(alpha: 0.82),
+                              scheme.primaryContainer.withValues(alpha: 0.14),
+                            ],
+                          ),
+                          boxShadow: [
+                            BoxShadow(
+                              color: scheme.primary.withValues(alpha: 0.10),
+                              blurRadius: 90,
+                              spreadRadius: -18,
+                              offset: const Offset(0, 28),
+                            ),
                           ],
                         ),
-                        boxShadow: [
-                          BoxShadow(
-                            color: scheme.primary.withValues(alpha: 0.10),
-                            blurRadius: 90,
-                            spreadRadius: -18,
-                            offset: const Offset(0, 28),
-                          ),
-                        ],
-                      ),
-                      child: Padding(
-                        padding: const EdgeInsets.all(16),
-                        child: ConstrainedBox(
-                          constraints: const BoxConstraints(maxHeight: 360),
-                          child: SingleChildScrollView(
-                            physics: const BouncingScrollPhysics(),
-                            child: cardContent,
+                        child: Padding(
+                          padding: const EdgeInsets.all(16),
+                          child: ConstrainedBox(
+                            constraints: const BoxConstraints(maxHeight: 360),
+                            child: SingleChildScrollView(
+                              physics: const BouncingScrollPhysics(),
+                              child: cardContent,
+                            ),
                           ),
                         ),
                       ),
                     ),
-                  ),
-                );
-              },
+                  );
+                },
+              ),
             ),
           ),
         ),
@@ -1166,7 +1170,15 @@ class _FullVpnModeScreenState extends State<FullVpnModeScreen>
     if (mounted) setState(() {});
   }
 
+  DateTime? _lastNotificationPush;
+
   Future<void> _pushStatusToNotification() async {
+    final now = DateTime.now();
+    if (_lastNotificationPush != null && now.difference(_lastNotificationPush!).inMilliseconds < 500) {
+      return;
+    }
+    _lastNotificationPush = now;
+
     await _notifWorker.pushStatus(
       connected: c.connected,
       connectingUi: c.connectingUi,
@@ -1274,11 +1286,14 @@ class _FullVpnModeScreenState extends State<FullVpnModeScreen>
                                 final ip = _ipv4Only(c.uiIp);
                                 final l10n = AppLocalizations.of(context)!;
 
-                                final srv = c.selectedServer;
-                                final locationName = (srv.city?.isNotEmpty == true)
-                                    ? srv.city!
-                                    : (srv.countryCode.isNotEmpty
-                                    ? _countryName(srv.countryCode)
+                                final activeSrv = c.servers.firstWhere(
+                                      (s) => s.id == _effectiveServerId,
+                                  orElse: () => c.selectedServer,
+                                );
+                                final locationName = (activeSrv.city?.isNotEmpty == true)
+                                    ? activeSrv.city!
+                                    : (activeSrv.countryCode.isNotEmpty
+                                    ? _countryName(activeSrv.countryCode)
                                     : country);
 
                                 final topLine = c.connectingUi
