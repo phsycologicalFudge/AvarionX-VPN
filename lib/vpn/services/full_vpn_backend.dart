@@ -39,6 +39,7 @@ class FullVpnController extends ChangeNotifier {
   static const kLastLon = "cs_vpn_last_lon";
   static const kAnonymousDeviceKeyFallback = "cs_anonymous_device_key_fallback";
   static const kShowFlagMarkers = "cs_vpn_show_flag_markers";
+  static const kSplitExcludedPkgs = "cs_vpn_split_excluded_pkgs";
   static const int kStandaloneSoftLimitBytes = 10 * 1024 * 1024 * 1024;
 
   final String apiBase;
@@ -55,7 +56,6 @@ class FullVpnController extends ChangeNotifier {
   Timer? _runtimeSyncTimer;
   Timer? _serverStatusTimer;
   Timer? _probeTimer;
-  Timer? _statsTimer;
   Timer? _locationsTimer;
   final VpnSoundController soundController = VpnSoundController();
 
@@ -306,9 +306,9 @@ class FullVpnController extends ChangeNotifier {
 
   void _startProbePolling() {
     _probeTimer?.cancel();
-    _probeTimer = Timer.periodic(const Duration(seconds: 12), (_) async {
+    _probeTimer = Timer.periodic(const Duration(seconds: 30), (_) async {
       if (_disposed || !_connected) return;
-      await _probeHttps("https://www.royalroad.com");
+      await _probeHttps("https://cp.cloudflare.com/generate_204");
       await _measureLatency();
     });
   }
@@ -412,8 +412,7 @@ class FullVpnController extends ChangeNotifier {
     if (_serverStatusTimer == null) _startServerStatusPolling();
 
     if (_connected) {
-      unawaited(_probeHttps("https://www.royalroad.com"));
-      unawaited(_probeHttps("https://api.ipify.org"));
+      unawaited(_probeHttps("https://cp.cloudflare.com/generate_204"));
     }
   }
 
@@ -704,7 +703,6 @@ class FullVpnController extends ChangeNotifier {
     _runtimeSyncTimer?.cancel();
     _serverStatusTimer?.cancel();
     _probeTimer?.cancel();
-    _statsTimer?.cancel();
     _locationsTimer?.cancel();
     soundController.dispose();
     super.dispose();
@@ -947,13 +945,20 @@ class FullVpnController extends ChangeNotifier {
         _net("wg_start begin region=${_selectedServerId} endpoint=$endpoint assignedIp=$assignedIp allowed=${allowed.length} dns=${dns.length} cfgLen=${cfg.length}");
       }
 
+      final splitPrefs = await SharedPreferences.getInstance();
+      final excludedPkgs = (splitPrefs.getStringList(kSplitExcludedPkgs) ?? const <String>[])
+          .map((e) => e.trim())
+          .where((e) => e.isNotEmpty)
+          .toList();
+
+      final Map<String, dynamic> startArgs = isHysteriaTransport
+          ? Map<String, dynamic>.from(hysteriaArgs ?? const <String, dynamic>{})
+          : <String, dynamic>{"config": cfg};
+      startArgs["excluded_apps"] = excludedPkgs;
+
       final r = await vpnChannel.invokeMethod(
         _startMethodName(),
-        isHysteriaTransport
-            ? hysteriaArgs
-            : {
-          "config": cfg,
-        },
+        startArgs,
       );
 
       sw.stop();
@@ -974,9 +979,6 @@ class FullVpnController extends ChangeNotifier {
       await _setGlobalModeFull();
       if (_disposed) return;
 
-      _status = "Securing connection...";
-      notifyListeners();
-
       await _syncWithRuntime();
       if (_disposed) return;
 
@@ -985,24 +987,8 @@ class FullVpnController extends ChangeNotifier {
         _startUsagePolling();
       }
 
-      final start = DateTime.now();
-      while (!_disposed && DateTime.now().difference(start).inMilliseconds < 2500) {
-        final running = await _isTunnelRunning();
-        if (running) break;
-        await Future.delayed(const Duration(milliseconds: 120));
-      }
-
-      await refreshLocation(force: true);
-      if (_disposed) return;
-
-      unawaited(_probeHttps("https://api.ipify.org"));
-      unawaited(_probeHttps("https://www.royalroad.com"));
-      unawaited(_probeHttps("https://cloudflare.com"));
+      unawaited(_probeHttps("https://cp.cloudflare.com/generate_204"));
       unawaited(_measureLatency());
-      _status = "Securing connection...";
-      notifyListeners();
-
-      unawaited(refreshLocation(force: true));
     } on PlatformException catch (e) {
       _connectingUi = false;
 
@@ -1059,7 +1045,7 @@ class FullVpnController extends ChangeNotifier {
     fetchServerStatus();
 
     _serverStatusTimer = Timer.periodic(
-      const Duration(seconds: 8),
+      const Duration(seconds: 30),
           (_) async {
         if (_token.isEmpty || _disposed) return;
         await fetchServerStatus();
@@ -1119,14 +1105,7 @@ class FullVpnController extends ChangeNotifier {
     } catch (_) {}
   }
 
-  void _startStatsPolling() {
-    _statsTimer?.cancel();
-    _statsTimer = Timer.periodic(const Duration(seconds: 1), (_) => _pollTunnelStats());
-  }
-
   void _stopStatsPolling() {
-    _statsTimer?.cancel();
-    _statsTimer = null;
     _rxBytes = 0;
     _txBytes = 0;
     _lastStatsAt = null;
@@ -1138,7 +1117,15 @@ class FullVpnController extends ChangeNotifier {
     _runtimeSyncTimer?.cancel();
     _runtimeSyncTimer = Timer.periodic(
       const Duration(seconds: 1),
-          (_) => _syncWithRuntime(),
+          (_) async {
+        if (_disposed) return;
+        _syncTick++;
+        final active = _connected || _connectingUi || _busy;
+        if (active || _syncTick % 4 == 0) {
+          await _syncWithRuntime();
+        }
+        if (_connected && !_disposed) await _pollTunnelStats();
+      },
     );
   }
 
@@ -1190,7 +1177,7 @@ class FullVpnController extends ChangeNotifier {
         return;
       }
 
-      _status = "Securing connection...";
+      _status = "Connecting...";
       notifyListeners();
 
       await Future.delayed(Duration(milliseconds: 350 + (i * 250)));
@@ -1204,6 +1191,7 @@ class FullVpnController extends ChangeNotifier {
   }
 
   bool _isSyncing = false;
+  int _syncTick = 0;
 
   Future<void> _syncWithRuntime() async {
     if (_isSyncing) return;
@@ -1220,7 +1208,7 @@ class FullVpnController extends ChangeNotifier {
         _loc = null;
         _locFetchedAt = null;
         _connectingUi = true;
-        _status = "Securing connection...";
+        _status = "Connecting...";
         notifyListeners();
         unawaited(soundController.playConnect());
         await _postConnectRefresh();
@@ -1426,7 +1414,7 @@ class FullVpnController extends ChangeNotifier {
       client.connectionTimeout = const Duration(seconds: 8);
 
       final swConn = Stopwatch()..start();
-      final req = await client.getUrl(uri).timeout(const Duration(seconds: 8));
+      final req = await client.openUrl("HEAD", uri).timeout(const Duration(seconds: 8));
       final resp = await req.close().timeout(const Duration(seconds: 8));
       swConn.stop();
 

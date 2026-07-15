@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:http/http.dart' as http;
@@ -250,7 +251,7 @@ class _PrivateDnsScreenState extends State<PrivateDnsScreen>
 
         await file.writeAsString(line, mode: FileMode.append, flush: true);
 
-        if (mounted) {
+        if (kDebugMode && mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(content: Text('DNS debug saved: $path')),
           );
@@ -262,7 +263,7 @@ class _PrivateDnsScreenState extends State<PrivateDnsScreen>
       }
     }
 
-    if (mounted) {
+    if (kDebugMode && mounted) {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text('DNS debug failed: $lastError')),
       );

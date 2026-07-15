@@ -15,6 +15,24 @@ class FullVpnSplitTunnelingScreen extends StatefulWidget {
 class _FullVpnSplitTunnelingScreenState extends State<FullVpnSplitTunnelingScreen> {
   int _reloadTick = 0;
 
+  late Future<List<String>> _excludedFuture;
+  Future<List<FullVpnInstalledApp>>? _appsFuture;
+  final Map<String, Future<List<int>?>> _iconFutures = {};
+
+  @override
+  void initState() {
+    super.initState();
+    _excludedFuture = _loadExcludedPkgs();
+  }
+
+  Future<List<FullVpnInstalledApp>> _appsOnce() {
+    return _appsFuture ??= FullVpnInstalledAppsWorker.listLaunchableApps();
+  }
+
+  Future<List<int>?> _iconFor(String pkg) {
+    return _iconFutures.putIfAbsent(pkg, () => FullVpnInstalledAppsWorker.loadIconBytes(pkg));
+  }
+
   Future<List<String>> _loadExcludedPkgs() async {
     final prefs = await SharedPreferences.getInstance();
     final list = prefs.getStringList(FullVpnSplitTunnelingScreen.kSplitExcludedPkgs) ?? const <String>[];
@@ -28,7 +46,10 @@ class _FullVpnSplitTunnelingScreenState extends State<FullVpnSplitTunnelingScree
   }
 
   void _reload() {
-    setState(() => _reloadTick++);
+    setState(() {
+      _reloadTick++;
+      _excludedFuture = _loadExcludedPkgs();
+    });
   }
 
   Future<void> _openSplitTunnelPicker(BuildContext context) async {
@@ -73,7 +94,7 @@ class _FullVpnSplitTunnelingScreenState extends State<FullVpnSplitTunnelingScree
         title: const Text("Split tunneling"),
       ),
       body: FutureBuilder<List<String>>(
-        future: _loadExcludedPkgs().then((v) => v),
+        future: _excludedFuture,
         key: ValueKey(_reloadTick),
         builder: (ctx, snap) {
           final list = snap.data ?? const <String>[];
@@ -134,7 +155,7 @@ class _FullVpnSplitTunnelingScreenState extends State<FullVpnSplitTunnelingScree
                 ),
                 const SizedBox(height: 8),
                 FutureBuilder<List<FullVpnInstalledApp>>(
-                  future: FullVpnInstalledAppsWorker.listLaunchableApps(),
+                  future: _appsOnce(),
                   builder: (ctx, appsSnap) {
                     final apps = appsSnap.data ?? const <FullVpnInstalledApp>[];
                     final nameByPkg = <String, String>{
@@ -150,7 +171,7 @@ class _FullVpnSplitTunnelingScreenState extends State<FullVpnSplitTunnelingScree
                           child: Row(
                             children: [
                               FutureBuilder<List<int>?>(
-                                future: FullVpnInstalledAppsWorker.loadIconBytes(pkg),
+                                future: _iconFor(pkg),
                                 builder: (ctx, iconSnap) {
                                   final bytes = iconSnap.data;
                                   if (bytes == null) {

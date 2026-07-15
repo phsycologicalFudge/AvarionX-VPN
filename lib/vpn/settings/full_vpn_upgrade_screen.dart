@@ -186,6 +186,7 @@ class _FullVpnUpgradeScreenState extends State<FullVpnUpgradeScreen> {
         return;
       }
 
+      if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text(AppLocalizations.of(context)!.settingsPurchaseNotConfirmed),

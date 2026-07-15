@@ -24,22 +24,18 @@ object CsvpnUsage {
         val plan = CsvpnCloudPrefs.cloudPlan(ctx)
         val now = System.currentTimeMillis()
         val reset = p.getLong("usage_reset_ms", 0L)
-        if (reset <= now) {
-            p.edit()
-                .putLong("usage_used", 0L)
-                .putLong("usage_reset_ms", resetAtMsUtc())
-                .apply()
-        }
         val limit = if (plan == "pro") 0L else 100000L
-        p.edit().putLong("usage_limit", limit).apply()
+
+        val editor = p.edit()
+        if (reset <= now) {
+            editor.putLong("usage_used", 0L)
+                .putLong("usage_reset_ms", resetAtMsUtc())
+        }
+        editor.putLong("usage_limit", limit).apply()
     }
 
+    @Synchronized
     fun bumpUsageCount(ctx: Context) {
-        val p = prefs(ctx)
-        p.edit().putLong("usage_used", p.getLong("usage_used", 0L) + 1L).apply()
-    }
-
-    fun bumpUsageCountDirect(ctx: Context) {
         val p = prefs(ctx)
         p.edit().putLong("usage_used", p.getLong("usage_used", 0L) + 1L).apply()
     }

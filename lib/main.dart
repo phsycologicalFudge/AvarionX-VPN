@@ -37,8 +37,14 @@ void main() async {
   WidgetsFlutterBinding.ensureInitialized();
   await FMTCObjectBoxBackend().initialise();
 
-  SystemChrome.setEnabledSystemUIMode(
-    SystemUiMode.immersiveSticky,
+  SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge);
+  SystemChrome.setSystemUIOverlayStyle(
+    const SystemUiOverlayStyle(
+      statusBarColor: Colors.transparent,
+      systemNavigationBarColor: Colors.transparent,
+      statusBarIconBrightness: Brightness.light,
+      systemNavigationBarIconBrightness: Brightness.light,
+    ),
   );
 
   final themeManager = ThemeManager();

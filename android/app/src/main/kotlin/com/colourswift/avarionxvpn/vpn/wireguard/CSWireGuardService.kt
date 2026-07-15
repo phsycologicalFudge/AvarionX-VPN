@@ -12,12 +12,12 @@ import android.os.Build
 import android.util.Log
 import androidx.core.app.NotificationCompat
 import com.colourswift.avarionxvpn.R
+import com.colourswift.avarionxvpn.vpn.VpnNotificationActionReceiver
 import com.wireguard.android.backend.GoBackend
 import com.wireguard.android.backend.Tunnel
 import com.wireguard.config.Config
 import java.util.concurrent.Executors
 import java.util.concurrent.ScheduledExecutorService
-import java.util.concurrent.ScheduledFuture
 import java.util.concurrent.TimeUnit
 
 class CSWireGuardService : VpnService() {
@@ -26,12 +26,10 @@ class CSWireGuardService : VpnService() {
         @Volatile var isRunning: Boolean = false
         const val ACTION_START = "com.colourswift.avarionxvpn.WG_START"
         const val ACTION_STOP = "com.colourswift.avarionxvpn.WG_STOP"
-        const val ACTION_PAUSE = "com.colourswift.avarionxvpn.WG_PAUSE"
         const val ACTION_UPDATE_USAGE = "com.colourswift.avarionxvpn.WG_UPDATE_USAGE"
         const val EXTRA_EXCLUDED_APPS_JSON = "excluded_apps_json"
         const val EXTRA_WG_CONFIG = "wg_config"
         const val EXTRA_USAGE_TEXT = "usage_text"
-        const val EXTRA_PAUSE_MINUTES = "pause_minutes"
         private const val NOTIF_ID = 230
         private const val NOTIF_CHANNEL = "cs_wg_status"
         private const val RC_DISCONNECT = 230001
@@ -67,11 +65,9 @@ class CSWireGuardService : VpnService() {
     @Volatile private var up = false
     @Volatile private var statusText: String = "Disconnected"
     @Volatile private var usageText: String = ""
-    @Volatile private var pausedUntilMs: Long = 0L
 
     private var lastConfigRaw: String? = null
     private var lastExcludedAppsJson: String? = null
-    private var resumeFuture: ScheduledFuture<*>? = null
 
     override fun onCreate() {
         super.onCreate()
@@ -91,8 +87,6 @@ class CSWireGuardService : VpnService() {
 
         if (action == ACTION_STOP) {
             worker.execute {
-                cancelResumeTimer()
-                pausedUntilMs = 0L
                 stopBackendOnly()
                 stopForegroundSafe()
                 isRunning = false
@@ -102,28 +96,6 @@ class CSWireGuardService : VpnService() {
                 stopSelf()
             }
             return START_NOT_STICKY
-        }
-
-        if (action == ACTION_PAUSE) {
-            val minutes = i.getIntExtra(EXTRA_PAUSE_MINUTES, 5).coerceAtLeast(1)
-            worker.execute {
-                if (lastConfigRaw.isNullOrBlank()) {
-                    statusText = "Disconnected"
-                    updateNotif(statusText)
-                    return@execute
-                }
-
-                cancelResumeTimer()
-                pausedUntilMs = System.currentTimeMillis() + minutes * 60_000L
-                stopBackendOnly()
-                starting = false
-                up = false
-                isRunning = false
-                statusText = "Paused"
-                updateNotif(statusText)
-                scheduleResumeTimer(minutes)
-            }
-            return START_STICKY
         }
 
         if (action == ACTION_START) {
@@ -141,14 +113,10 @@ class CSWireGuardService : VpnService() {
                 isRunning = false
                 starting = false
                 up = false
-                pausedUntilMs = 0L
                 statusText = "Failed to connect"
                 stopSelf()
                 return START_NOT_STICKY
             }
-
-            cancelResumeTimer()
-            pausedUntilMs = 0L
 
             if (starting) {
                 statusText = "Connecting"
@@ -169,12 +137,15 @@ class CSWireGuardService : VpnService() {
     }
 
     private fun disconnectPendingIntent(): PendingIntent {
-        val intent = Intent(this, CSWireGuardService::class.java)
-            .setAction(ACTION_STOP)
+        val intent = Intent(this, VpnNotificationActionReceiver::class.java)
+            .setAction(VpnNotificationActionReceiver.ACTION_DISCONNECT)
+            .putExtra(VpnNotificationActionReceiver.EXTRA_MODE, VpnNotificationActionReceiver.MODE_WG)
 
-        return servicePendingIntent(
+        return PendingIntent.getBroadcast(
+            this,
             RC_DISCONNECT,
-            intent
+            intent,
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
         )
     }
 
@@ -186,32 +157,19 @@ class CSWireGuardService : VpnService() {
             else -> 230100 + minutes
         }
 
-        val intent = Intent(this, CSWireGuardService::class.java)
-            .setAction(ACTION_PAUSE)
-            .putExtra(EXTRA_PAUSE_MINUTES, minutes)
+        val intent = Intent(this, VpnNotificationActionReceiver::class.java)
+            .setAction(VpnNotificationActionReceiver.ACTION_PAUSE)
+            .putExtra(VpnNotificationActionReceiver.EXTRA_MODE, VpnNotificationActionReceiver.MODE_WG)
+            .putExtra(VpnNotificationActionReceiver.EXTRA_MINUTES, minutes)
+            .putExtra(VpnNotificationActionReceiver.EXTRA_WG_CONFIG, lastConfigRaw)
+            .putExtra(VpnNotificationActionReceiver.EXTRA_EXCLUDED_APPS_JSON, lastExcludedAppsJson)
 
-        return servicePendingIntent(
+        return PendingIntent.getBroadcast(
+            this,
             requestCode,
-            intent
+            intent,
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
         )
-    }
-
-    private fun servicePendingIntent(requestCode: Int, intent: Intent): PendingIntent {
-        return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            PendingIntent.getForegroundService(
-                this,
-                requestCode,
-                intent,
-                PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
-            )
-        } else {
-            PendingIntent.getService(
-                this,
-                requestCode,
-                intent,
-                PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
-            )
-        }
     }
 
     private fun buildServiceNotification(status: String) =
@@ -274,12 +232,6 @@ class CSWireGuardService : VpnService() {
     }
 
     private fun composeNotifText(status: String): String {
-        if (status == "Paused") {
-            val remainingMs = (pausedUntilMs - System.currentTimeMillis()).coerceAtLeast(0L)
-            val remainingMin = ((remainingMs + 59_999L) / 60_000L).coerceAtLeast(1L)
-            return "Paused, resumes in ${remainingMin}m"
-        }
-
         val usage = usageText.trim()
         return if (usage.isNotEmpty()) usage else status
     }
@@ -308,7 +260,6 @@ class CSWireGuardService : VpnService() {
             ensureBackend().setState(tunnel, Tunnel.State.UP, cfg)
             val upMs = (System.nanoTime() - upStart) / 1_000_000
 
-            pausedUntilMs = 0L
             up = true
             isRunning = true
             statusText = "Connected"
@@ -317,16 +268,11 @@ class CSWireGuardService : VpnService() {
             Log.i("CSWG", "WG UP ok ms=$upMs")
             logNetState("post_up")
 
-            worker.execute {
-                try {
-                    Thread.sleep(1500)
-                } catch (_: Throwable) {
-                }
+            scheduler.schedule({
                 logNetState("post_up_1500ms")
-            }
+            }, 1500, TimeUnit.MILLISECONDS)
         } catch (t: Throwable) {
             Log.e("CSWG", "Failed to start WG", t)
-            pausedUntilMs = 0L
             up = false
             isRunning = false
             statusText = "Failed to connect"
@@ -337,30 +283,6 @@ class CSWireGuardService : VpnService() {
         } finally {
             starting = false
         }
-    }
-
-    private fun scheduleResumeTimer(minutes: Int) {
-        resumeFuture = scheduler.schedule({
-            Log.i("CSWG", "pause timer fired minutes=$minutes")
-            val raw = lastConfigRaw
-            val excludedJson = lastExcludedAppsJson
-
-            if (raw.isNullOrBlank()) {
-                pausedUntilMs = 0L
-                statusText = "Disconnected"
-                updateNotif(statusText)
-                return@schedule
-            }
-
-            worker.execute {
-                connectTunnel(raw, excludedJson)
-            }
-        }, minutes.toLong(), TimeUnit.MINUTES)
-    }
-
-    private fun cancelResumeTimer() {
-        resumeFuture?.cancel(true)
-        resumeFuture = null
     }
 
     private fun ensureBackend(): GoBackend {
@@ -462,8 +384,6 @@ class CSWireGuardService : VpnService() {
 
     override fun onRevoke() {
         worker.execute {
-            cancelResumeTimer()
-            pausedUntilMs = 0L
             stopBackendOnly()
             stopForegroundSafe()
             isRunning = false
@@ -477,8 +397,6 @@ class CSWireGuardService : VpnService() {
     override fun onDestroy() {
         instance = null
         try {
-            cancelResumeTimer()
-            pausedUntilMs = 0L
             stopBackendOnly()
             stopForegroundSafe()
             isRunning = false

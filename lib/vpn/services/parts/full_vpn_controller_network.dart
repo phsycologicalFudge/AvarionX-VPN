@@ -93,21 +93,21 @@ extension _FullVpnControllerNetwork on FullVpnController {
       if (age.inSeconds < 10) return;
     }
 
+    final uri = hasAuth
+        ? Uri.parse("$apiBase/vpn/my-ip")
+        : Uri.parse("$apiBase/vpn/my-ip").replace(
+      queryParameters: {
+        "anonymousDeviceKey": anonymousDeviceKey,
+      },
+    );
+
+    final headers = <String, String>{};
+    if (hasAuth) {
+      headers["authorization"] = "Bearer $_token";
+    }
+
     try {
-      final uri = hasAuth
-          ? Uri.parse("$apiBase/vpn/my-ip")
-          : Uri.parse("$apiBase/vpn/my-ip").replace(
-        queryParameters: {
-          "anonymousDeviceKey": anonymousDeviceKey,
-        },
-      );
-
-      final headers = <String, String>{};
-      if (hasAuth) {
-        headers["authorization"] = "Bearer $_token";
-      }
-
-      final res = await http.get(uri, headers: headers).timeout(const Duration(seconds: 4));
+      final res = await http.get(uri, headers: headers).timeout(const Duration(milliseconds: 1500));
 
       if (res.statusCode == 200) {
         final j = jsonDecode(res.body) as Map<String, dynamic>;
@@ -132,7 +132,10 @@ extension _FullVpnControllerNetwork on FullVpnController {
         await _clearSession();
         _status = "Session expired. Sign in again.";
         notifyListeners();
+        return;
       }
+
+      _net("GET $apiBase/vpn/my-ip status=${res.statusCode}");
     } catch (e) {
       _net("GET $apiBase/vpn/my-ip exception=$e");
     }
@@ -267,15 +270,7 @@ extension _FullVpnControllerNetwork on FullVpnController {
       final rawBody = res.body;
       final bodyText = rawBody.trim();
 
-      print("=== VPN PROVISION RESPONSE BEGIN ===");
-      print("status=${res.statusCode}");
-      print("rawBody=$rawBody");
-      print("bodyText=$bodyText");
-      print("=== VPN PROVISION RESPONSE END ===");
-
-      _net("POST $apiBase/vpn/provision status=${res.statusCode}");
-      _net("POST $apiBase/vpn/provision rawBody=$rawBody");
-      _net("POST $apiBase/vpn/provision bodyText=$bodyText");
+      _net("POST $apiBase/vpn/provision status=${res.statusCode} bodyLen=${rawBody.length}");
 
       if (res.statusCode == 200) {
         final j = jsonDecode(rawBody) as Map<String, dynamic>;

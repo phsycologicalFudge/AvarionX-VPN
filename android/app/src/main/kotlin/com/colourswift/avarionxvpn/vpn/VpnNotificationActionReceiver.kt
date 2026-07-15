@@ -103,6 +103,7 @@ class VpnNotificationActionReceiver : BroadcastReceiver() {
                     .putExtra(CSHysteriaService.EXTRA_AUTH, sourceIntent.getStringExtra(EXTRA_AUTH))
                     .putExtra(CSHysteriaService.EXTRA_SNI, sourceIntent.getStringExtra(EXTRA_SNI))
                     .putExtra(CSHysteriaService.EXTRA_DNS, sourceIntent.getStringExtra(EXTRA_DNS))
+                    .putExtra(CSHysteriaService.EXTRA_EXCLUDED_APPS_JSON, sourceIntent.getStringExtra(EXTRA_EXCLUDED_APPS_JSON))
             }
 
             else -> null
@@ -137,19 +138,13 @@ class VpnNotificationActionReceiver : BroadcastReceiver() {
                 resumeIntent.putExtra(EXTRA_AUTH, sourceIntent.getStringExtra(EXTRA_AUTH))
                 resumeIntent.putExtra(EXTRA_SNI, sourceIntent.getStringExtra(EXTRA_SNI))
                 resumeIntent.putExtra(EXTRA_DNS, sourceIntent.getStringExtra(EXTRA_DNS))
+                resumeIntent.putExtra(EXTRA_EXCLUDED_APPS_JSON, sourceIntent.getStringExtra(EXTRA_EXCLUDED_APPS_JSON))
             }
-        }
-
-        val requestCode = when (mode) {
-            MODE_WG -> 4101
-            MODE_AWG -> 4102
-            MODE_HY -> 4103
-            else -> 4199
         }
 
         val pendingIntent = PendingIntent.getBroadcast(
             context,
-            requestCode,
+            resumeRequestCode(mode),
             resumeIntent,
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
         )

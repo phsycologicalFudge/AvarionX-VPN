@@ -272,68 +272,77 @@ class _FullVpnCustomisationView extends StatelessWidget {
       child: Divider(height: 1, thickness: 1, color: scheme.outlineVariant.withValues(alpha: 0.2)),
     );
 
-    return ListView(
-      padding: const EdgeInsets.fromLTRB(16, 14, 16, 90),
+    final bottomInset = MediaQuery.of(context).padding.bottom;
+
+    return Column(
       children: [
-        Text(
-          l10n.vpnBlocklistsTitle,
-          style: theme.textTheme.titleMedium?.copyWith(
-            fontWeight: FontWeight.w900,
-            color: scheme.onSurface,
+        Expanded(
+          child: ListView(
+            padding: const EdgeInsets.fromLTRB(16, 14, 16, 12),
+            children: [
+              Text(
+                l10n.vpnBlocklistsTitle,
+                style: theme.textTheme.titleMedium?.copyWith(
+                  fontWeight: FontWeight.w900,
+                  color: scheme.onSurface,
+                ),
+              ),
+              const SizedBox(height: 6),
+              Text(
+                "Choose which categories are filtered before traffic reaches your device.",
+                style: theme.textTheme.bodySmall?.copyWith(
+                  color: scheme.onSurfaceVariant,
+                  height: 1.35,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+              const SizedBox(height: 18),
+
+              if (colourswift.isNotEmpty) ...[
+                sectionLabel('COLOURSWIFT'),
+                ...List.generate(
+                  colourswift.length,
+                      (i) => tile(
+                    colourswift[i],
+                    enabled: true,
+                    forceOff: false,
+                    showDivider: i != colourswift.length - 1,
+                  ),
+                ),
+                sectionDivider(),
+              ],
+
+              if (categories.isNotEmpty) ...[
+                sectionLabel('CATEGORIES'),
+                ...List.generate(
+                  categories.length,
+                      (i) => tile(
+                    categories[i],
+                    enabled: true,
+                    forceOff: false,
+                    showDivider: i != categories.length - 1,
+                  ),
+                ),
+              ],
+            ],
           ),
         ),
-        const SizedBox(height: 6),
-        Text(
-          "Choose which categories are filtered before traffic reaches your device.",
-          style: theme.textTheme.bodySmall?.copyWith(
-            color: scheme.onSurfaceVariant,
-            height: 1.35,
-            fontWeight: FontWeight.w600,
-          ),
-        ),
-        const SizedBox(height: 18),
-
-        if (colourswift.isNotEmpty) ...[
-          sectionLabel('COLOURSWIFT'),
-          ...List.generate(
-            colourswift.length,
-                (i) => tile(
-              colourswift[i],
-              enabled: true,
-              forceOff: false,
-              showDivider: i != colourswift.length - 1,
+        Padding(
+          padding: EdgeInsets.fromLTRB(16, 8, 16, 8 + bottomInset),
+          child: SizedBox(
+            width: double.infinity,
+            child: ElevatedButton(
+              onPressed: c.busy
+                  ? null
+                  : () async {
+                if (c.token.isEmpty) {
+                  await onRequireSignIn();
+                  return;
+                }
+                await c.saveDnsSettings();
+              },
+              child: Text(l10n.vpnSave),
             ),
-          ),
-          sectionDivider(),
-        ],
-
-        if (categories.isNotEmpty) ...[
-          sectionLabel('CATEGORIES'),
-          ...List.generate(
-            categories.length,
-                (i) => tile(
-              categories[i],
-              enabled: true,
-              forceOff: false,
-              showDivider: i != categories.length - 1,
-            ),
-          ),
-        ],
-
-        const SizedBox(height: 20),
-        SizedBox(
-          width: double.infinity,
-          child: ElevatedButton(
-            onPressed: c.busy
-                ? null
-                : () async {
-              if (c.token.isEmpty) {
-                await onRequireSignIn();
-                return;
-              }
-              await c.saveDnsSettings();
-            },
-            child: Text(l10n.vpnSave),
           ),
         ),
       ],

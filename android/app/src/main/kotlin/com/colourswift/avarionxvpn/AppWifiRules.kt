@@ -53,6 +53,11 @@ object AppWifiRules {
         return caps.hasTransport(NetworkCapabilities.TRANSPORT_WIFI)
     }
 
+    fun hasActiveWifiBlocks(ctx: Context): Boolean {
+        if (!isWifi(ctx)) return false
+        return getWifiBlockedPkgs(ctx).isNotEmpty()
+    }
+
     fun shouldBlockUidOnWifi(ctx: Context, uid: Int): Boolean {
         if (!isWifi(ctx)) return false
         val blocked = getWifiBlockedPkgs(ctx)

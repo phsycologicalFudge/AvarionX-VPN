@@ -1226,7 +1226,7 @@ class _FullVpnModeScreenState extends State<FullVpnModeScreen>
               preferredSize: const Size.fromHeight(44),
               child: Builder(
                 builder: (context) {
-                  final headerColor = c.connected
+                  final headerColor = (c.connected && !c.connectingUi)
                       ? const Color(0xFF063C38)
                       : c.connectingUi
                       ? const Color(0xFF0A2C4A)
@@ -1297,9 +1297,7 @@ class _FullVpnModeScreenState extends State<FullVpnModeScreen>
                                     : country);
 
                                 final topLine = c.connectingUi
-                                    ? (c.connected
-                                    ? "Securing connection..."
-                                    : l10n.vpnStatusConnectingEllipsis)
+                                    ? l10n.vpnStatusConnectingEllipsis
                                     : (c.connected
                                     ? (locationName.isNotEmpty
                                     ? l10n.vpnStatusConnectedTo(locationName)

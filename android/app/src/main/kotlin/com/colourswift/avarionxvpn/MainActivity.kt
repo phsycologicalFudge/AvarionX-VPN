@@ -13,7 +13,6 @@ import com.colourswift.avarionxvpn.vpn.VpnModeSwitcher
 import com.colourswift.avarionxvpn.vpn.amnezia.CSAmneziaWireGuardService
 import com.colourswift.avarionxvpn.vpn.wireguard.CSWireGuardService
 import com.colourswift.avarionxvpn.vpn.hysteria.CSHysteriaService
-import io.flutter.embedding.android.FlutterActivity
 import io.flutter.embedding.android.FlutterFragmentActivity
 import io.flutter.embedding.engine.FlutterEngine
 import io.flutter.plugin.common.EventChannel
@@ -27,6 +26,7 @@ object CsDnsEvents {
     private val lock = Any()
     private val buffer = ArrayDeque<Map<String, Any?>>(MAX)
     private val sinks = LinkedHashSet<EventChannel.EventSink>()
+    private val mainHandler = android.os.Handler(android.os.Looper.getMainLooper())
 
     fun addSink(s: EventChannel.EventSink?) {
         if (s == null) return
@@ -61,10 +61,12 @@ object CsDnsEvents {
 
         if (targets.isEmpty()) return
 
-        for (t in targets) {
-            try {
-                t.success(map)
-            } catch (_: Exception) {
+        mainHandler.post {
+            for (t in targets) {
+                try {
+                    t.success(map)
+                } catch (_: Exception) {
+                }
             }
         }
     }
@@ -163,13 +165,7 @@ class MainActivity : FlutterFragmentActivity() {
 
                         val excludedAppsJson = argsToExcludedAppsJson(call.argument<List<*>>("excluded_apps"))
 
-                        VpnModeSwitcher.stopDnsVpn(applicationContext)
-                        VpnModeSwitcher.stopWireGuard(applicationContext)
-                        stopAmneziaService()
-
-                        android.os.Handler(android.os.Looper.getMainLooper()).postDelayed({
-                            startWgService(config, excludedAppsJson)
-                        }, 650)
+                        VpnModeSwitcher.switchToWireGuard(applicationContext, config, excludedAppsJson)
 
                         result.success(true)
                     }
@@ -195,13 +191,7 @@ class MainActivity : FlutterFragmentActivity() {
 
                         val excludedAppsJson = argsToExcludedAppsJson(call.argument<List<*>>("excluded_apps"))
 
-                        VpnModeSwitcher.stopDnsVpn(applicationContext)
-                        VpnModeSwitcher.stopWireGuard(applicationContext)
-                        stopAmneziaService()
-
-                        android.os.Handler(android.os.Looper.getMainLooper()).postDelayed({
-                            startAmneziaService(config, excludedAppsJson)
-                        }, 650)
+                        VpnModeSwitcher.switchToAmneziaWireGuard(applicationContext, config, excludedAppsJson)
 
                         result.success(true)
                     }
@@ -226,25 +216,9 @@ class MainActivity : FlutterFragmentActivity() {
                             return@setMethodCallHandler
                         }
 
-                        VpnModeSwitcher.stopDnsVpn(applicationContext)
-                        VpnModeSwitcher.stopWireGuard(applicationContext)
-                        stopAmneziaService()
+                        val excludedAppsJson = argsToExcludedAppsJson(call.argument<List<*>>("excluded_apps"))
 
-                        android.os.Handler(android.os.Looper.getMainLooper()).postDelayed({
-                            val intent = Intent(applicationContext, CSHysteriaService::class.java).apply {
-                                action = CSHysteriaService.ACTION_START
-                                putExtra(CSHysteriaService.EXTRA_SERVER, server)
-                                putExtra(CSHysteriaService.EXTRA_AUTH, auth)
-                                putExtra(CSHysteriaService.EXTRA_SNI, sni)
-                                putExtra(CSHysteriaService.EXTRA_DNS, dns)
-                            }
-
-                            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-                                applicationContext.startForegroundService(intent)
-                            } else {
-                                applicationContext.startService(intent)
-                            }
-                        }, 650)
+                        VpnModeSwitcher.switchToHysteria(applicationContext, server, auth, sni, dns, excludedAppsJson)
 
                         result.success(true)
                     }
@@ -547,22 +521,6 @@ class MainActivity : FlutterFragmentActivity() {
             action = CSWireGuardService.ACTION_STOP
         }
         startService(i)
-    }
-
-    private fun startAmneziaService(cfg: String, excludedAppsJson: String?) {
-        val i = Intent(this, CSAmneziaWireGuardService::class.java).apply {
-            action = CSAmneziaWireGuardService.ACTION_START
-            putExtra(CSAmneziaWireGuardService.EXTRA_AWG_CONFIG, cfg)
-            if (!excludedAppsJson.isNullOrBlank()) {
-                putExtra(CSAmneziaWireGuardService.EXTRA_EXCLUDED_APPS_JSON, excludedAppsJson)
-            }
-        }
-
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            ContextCompat.startForegroundService(this, i)
-        } else {
-            startService(i)
-        }
     }
 
     private fun stopAmneziaService() {

@@ -16,6 +16,8 @@ import com.colourswift.avarionxvpn.vpn.VpnNotificationActionReceiver
 import com.colourswift.avarionxvpn.vpn.hysteria.tun.Tun2SocksBridge
 import java.io.File
 import java.util.concurrent.Executors
+import java.util.concurrent.ScheduledExecutorService
+import java.util.concurrent.TimeUnit
 
 class CSHysteriaService : VpnService() {
     companion object {
@@ -32,11 +34,13 @@ class CSHysteriaService : VpnService() {
         const val EXTRA_AUTH = "auth"
         const val EXTRA_SNI = "sni"
         const val EXTRA_DNS = "dns"
+        const val EXTRA_EXCLUDED_APPS_JSON = "excluded_apps_json"
         const val EXTRA_USAGE_TEXT = "usage_text"
 
         private const val NOTIF_ID = 232
         private const val NOTIF_CHANNEL = "cs_hy_status"
         private const val TUN_IPV4 = "198.18.0.1"
+        private const val TUN_IPV6 = "fdfe:dcba:9876::1"
         private const val TUN_MTU = 1280
         private const val RC_DISCONNECT = 232001
         private const val RC_PAUSE_5 = 232005
@@ -49,6 +53,8 @@ class CSHysteriaService : VpnService() {
     private var vpnInterface: ParcelFileDescriptor? = null
     private var processManager: HysteriaProcessManager? = null
     private var fdControlServer: HysteriaFdControlServer? = null
+    private var watchdog: ScheduledExecutorService? = null
+    private var socksPort: Int = 1080
 
     private val stats = HysteriaVpnStats()
 
@@ -58,23 +64,19 @@ class CSHysteriaService : VpnService() {
     private var lastAuth: String? = null
     private var lastSni: String? = null
     private var lastDns: String? = null
+    private var lastExcludedAppsJson: String? = null
 
     override fun onBind(intent: Intent?): IBinder? {
         return super.onBind(intent)
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
-        ensureNotifChannel()
-        startForegroundCompat(buildNotification("Starting Hysteria"))
-
-        val i = intent
-        if (i == null) {
+        val i = intent ?: run {
             stopSelf()
             return START_NOT_STICKY
         }
 
-        val action = i.action
-        if (action == null) {
+        val action = i.action ?: run {
             stopSelf()
             return START_NOT_STICKY
         }
@@ -101,10 +103,10 @@ class CSHysteriaService : VpnService() {
             val auth = i.getStringExtra(EXTRA_AUTH)?.trim().orEmpty()
             val sni = i.getStringExtra(EXTRA_SNI)?.trim().orEmpty()
             val dns = i.getStringExtra(EXTRA_DNS)?.trim().orEmpty()
+            val excludedAppsJson = i.getStringExtra(EXTRA_EXCLUDED_APPS_JSON)
 
             if (server.isEmpty() || auth.isEmpty() || sni.isEmpty() || dns.isEmpty()) {
                 HyLog.write(this, "ACTION_START missing args server=$server sni=$sni dns=$dns authLen=${auth.length}")
-                stopForeground(STOP_FOREGROUND_REMOVE)
                 stopSelf()
                 return START_NOT_STICKY
             }
@@ -113,6 +115,10 @@ class CSHysteriaService : VpnService() {
             lastAuth = auth
             lastSni = sni
             lastDns = dns
+            lastExcludedAppsJson = excludedAppsJson
+
+            ensureNotifChannel()
+            startForegroundCompat(buildNotification("Starting Hysteria"))
 
             worker.execute {
                 try {
@@ -123,7 +129,8 @@ class CSHysteriaService : VpnService() {
                         serverIpPort = server,
                         auth = auth,
                         sni = sni,
-                        dnsIp = dns
+                        dnsIp = dns,
+                        excludedAppsJson = excludedAppsJson
                     )
 
                     updateNotif(composeNotifTitle())
@@ -140,7 +147,6 @@ class CSHysteriaService : VpnService() {
             return START_STICKY
         }
 
-        stopForeground(STOP_FOREGROUND_REMOVE)
         stopSelf()
         return START_NOT_STICKY
     }
@@ -149,13 +155,17 @@ class CSHysteriaService : VpnService() {
         serverIpPort: String,
         auth: String,
         sni: String,
-        dnsIp: String
+        dnsIp: String,
+        excludedAppsJson: String?
     ) {
         HyLog.write(this, "startSession enter")
         stopSession()
         HyLog.write(this, "previous session cleared")
 
-        vpnInterface = buildVpnInterface(dnsIp)
+        socksPort = pickFreePort()
+        HyLog.write(this, "selected socks port $socksPort")
+
+        vpnInterface = buildVpnInterface(dnsIp, excludedAppsJson)
         HyLog.write(this, "vpnInterface established=${vpnInterface != null}")
 
         val fdSocketPath = File(filesDir, "hy_fd.sock").absolutePath
@@ -172,13 +182,14 @@ class CSHysteriaService : VpnService() {
             auth = auth,
             sni = sni,
             fdSocketPath = fdSocketPath,
-            socksPort = 1080
+            socksPort = socksPort
         )
         HyLog.write(this, "config written path=${config.absolutePath}")
 
         processManager = HysteriaProcessManager(
             context = this,
-            stats = stats
+            stats = stats,
+            socksPort = socksPort
         ).also { it.start(config) }
         HyLog.write(this, "processManager start returned alive=${processManager?.isAlive() == true}")
 
@@ -207,7 +218,44 @@ class CSHysteriaService : VpnService() {
         isReady = processManager?.isAlive() == true
         rxBytes = 0L
         txBytes = 0L
+        startWatchdog()
         HyLog.write(this, "flags set isRunning=$isRunning isReady=$isReady")
+    }
+
+    private fun pickFreePort(): Int {
+        return try {
+            java.net.ServerSocket(0).use { it.localPort }
+        } catch (_: Throwable) {
+            1080
+        }
+    }
+
+    private fun startWatchdog() {
+        watchdog?.shutdownNow()
+        watchdog = Executors.newSingleThreadScheduledExecutor().also { sched ->
+            sched.scheduleWithFixedDelay({
+                try {
+                    if (isRunning && processManager?.isAlive() != true) {
+                        HyLog.write(this, "watchdog: hysteria process died, tearing down")
+                        isReady = false
+                        worker.execute {
+                            stopSession()
+                            stopForeground(STOP_FOREGROUND_REMOVE)
+                            stopSelf()
+                        }
+                    }
+                } catch (_: Throwable) {
+                }
+            }, 2, 2, TimeUnit.SECONDS)
+        }
+    }
+
+    private fun stopWatchdog() {
+        try {
+            watchdog?.shutdownNow()
+        } catch (_: Throwable) {
+        }
+        watchdog = null
     }
 
     private fun buildTun2SocksConfig(
@@ -218,6 +266,7 @@ class CSHysteriaService : VpnService() {
 tunnel:
   mtu: $TUN_MTU
   ipv4: $TUN_IPV4
+  ipv6: $TUN_IPV6
 
 socks5:
   address: $socksHost
@@ -226,7 +275,7 @@ socks5:
 
 misc:
   log-file: stderr
-  log-level: debug
+  log-level: error
 """.trimIndent()
     }
 
@@ -252,6 +301,8 @@ misc:
 
     private fun stopSession() {
         HyLog.write(this, "stopSession begin")
+
+        stopWatchdog()
 
         try {
             Tun2SocksBridge.nativeStop()
@@ -283,20 +334,44 @@ misc:
         HyLog.write(this, "stopSession done")
     }
 
-    private fun buildVpnInterface(dnsIp: String): ParcelFileDescriptor {
+    private fun buildVpnInterface(dnsIp: String, excludedAppsJson: String?): ParcelFileDescriptor {
         val builder = Builder()
             .setSession("Secure VPN")
             .setBlocking(true)
             .setMtu(TUN_MTU)
             .addAddress(TUN_IPV4, 32)
+            .addAddress(TUN_IPV6, 128)
             .addRoute("0.0.0.0", 0)
+            .addRoute("::", 0)
             .addDnsServer(dnsIp)
+
+        for (pkg in parseExcludedApps(excludedAppsJson)) {
+            try {
+                builder.addDisallowedApplication(pkg)
+            } catch (_: Throwable) {
+            }
+        }
 
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
             builder.setMetered(false)
         }
 
         return builder.establish() ?: throw IllegalStateException("Failed to establish VPN interface")
+    }
+
+    private fun parseExcludedApps(json: String?): List<String> {
+        if (json.isNullOrBlank()) return emptyList()
+        return try {
+            val arr = org.json.JSONArray(json)
+            val out = ArrayList<String>(arr.length())
+            for (idx in 0 until arr.length()) {
+                val pkg = arr.optString(idx).trim()
+                if (pkg.isNotEmpty()) out.add(pkg)
+            }
+            out
+        } catch (_: Throwable) {
+            emptyList()
+        }
     }
 
     private fun ensureNotifChannel() {
@@ -344,6 +419,7 @@ misc:
             .putExtra(VpnNotificationActionReceiver.EXTRA_AUTH, lastAuth)
             .putExtra(VpnNotificationActionReceiver.EXTRA_SNI, lastSni)
             .putExtra(VpnNotificationActionReceiver.EXTRA_DNS, lastDns)
+            .putExtra(VpnNotificationActionReceiver.EXTRA_EXCLUDED_APPS_JSON, lastExcludedAppsJson)
 
         return PendingIntent.getBroadcast(
             this,

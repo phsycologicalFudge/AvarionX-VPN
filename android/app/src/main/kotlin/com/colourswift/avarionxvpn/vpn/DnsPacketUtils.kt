@@ -2,6 +2,18 @@ package com.colourswift.avarionxvpn.vpn
 
 object DnsPacketUtils {
 
+    @Volatile private var cachedFakeIpStr: String? = null
+    @Volatile private var cachedFakeIpInt: Int = 0
+
+    private fun fakeIpToInt(fakeDnsIp: String): Int {
+        if (fakeDnsIp == cachedFakeIpStr) return cachedFakeIpInt
+        val parts = fakeDnsIp.split(".").map { it.toInt() }
+        val v = (parts[0] shl 24) or (parts[1] shl 16) or (parts[2] shl 8) or parts[3]
+        cachedFakeIpStr = fakeDnsIp
+        cachedFakeIpInt = v
+        return v
+    }
+
     fun isIpv4Udp(d: ByteArray): Boolean {
         if (d.size < 28) return false
         val v = (d[0].toInt() ushr 4) and 0xF
@@ -22,8 +34,7 @@ object DnsPacketUtils {
                 ((d[18].toInt() and 0xFF) shl 8) or
                 (d[19].toInt() and 0xFF)
 
-        val parts = fakeDnsIp.split(".").map { it.toInt() }
-        val fakeInt = (parts[0] shl 24) or (parts[1] shl 16) or (parts[2] shl 8) or parts[3]
+        val fakeInt = fakeIpToInt(fakeDnsIp)
 
         val dstPort = ((d[ihl + 2].toInt() and 0xFF) shl 8) or (d[ihl + 3].toInt() and 0xFF)
         return dstIp == fakeInt && dstPort == 53

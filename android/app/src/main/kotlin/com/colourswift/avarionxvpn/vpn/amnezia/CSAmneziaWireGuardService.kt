@@ -372,14 +372,12 @@ class CSAmneziaWireGuardService : VpnService() {
     override fun onDestroy() {
         instance = null
         try {
-            worker.execute {
-                stopBackendOnly()
-                stopForegroundSafe()
-                isRunning = false
-                starting = false
-                up = false
-                statusText = "Disconnected"
-            }
+            stopBackendOnly()
+            stopForegroundSafe()
+            isRunning = false
+            starting = false
+            up = false
+            statusText = "Disconnected"
         } catch (_: Throwable) {
         }
         worker.shutdownNow()

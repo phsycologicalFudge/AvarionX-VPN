@@ -31,7 +31,7 @@ object VpnModeSwitcher {
         }
     }
 
-    fun switchToWireGuard(ctx: Context, config: String) {
+    fun switchToWireGuard(ctx: Context, config: String, excludedAppsJson: String?) {
         val appCtx = ctx.applicationContext
         worker.execute {
             stopDnsVpn(appCtx)
@@ -45,11 +45,11 @@ object VpnModeSwitcher {
                 },
                 5000
             )
-            startWireGuard(appCtx, config)
+            startWireGuard(appCtx, config, excludedAppsJson)
         }
     }
 
-    fun switchToAmneziaWireGuard(ctx: Context, config: String) {
+    fun switchToAmneziaWireGuard(ctx: Context, config: String, excludedAppsJson: String?) {
         val appCtx = ctx.applicationContext
         worker.execute {
             stopDnsVpn(appCtx)
@@ -63,11 +63,11 @@ object VpnModeSwitcher {
                 },
                 5000
             )
-            startAmneziaWireGuard(appCtx, config)
+            startAmneziaWireGuard(appCtx, config, excludedAppsJson)
         }
     }
 
-    fun switchToHysteria(ctx: Context, server: String, auth: String, sni: String) {
+    fun switchToHysteria(ctx: Context, server: String, auth: String, sni: String, dns: String, excludedAppsJson: String?) {
         val appCtx = ctx.applicationContext
         worker.execute {
             stopDnsVpn(appCtx)
@@ -81,7 +81,7 @@ object VpnModeSwitcher {
                 },
                 5000
             )
-            startHysteria(appCtx, server, auth, sni)
+            startHysteria(appCtx, server, auth, sni, dns, excludedAppsJson)
         }
     }
 
@@ -110,10 +110,13 @@ object VpnModeSwitcher {
         startCompat(ctx, i, false)
     }
 
-    fun startWireGuard(ctx: Context, config: String) {
+    fun startWireGuard(ctx: Context, config: String, excludedAppsJson: String?) {
         val i = Intent(ctx, CSWireGuardService::class.java).apply {
             action = CSWireGuardService.ACTION_START
             putExtra(CSWireGuardService.EXTRA_WG_CONFIG, config)
+            if (!excludedAppsJson.isNullOrBlank()) {
+                putExtra(CSWireGuardService.EXTRA_EXCLUDED_APPS_JSON, excludedAppsJson)
+            }
         }
         startCompat(ctx, i, true)
     }
@@ -125,10 +128,13 @@ object VpnModeSwitcher {
         startCompat(ctx, i, false)
     }
 
-    fun startAmneziaWireGuard(ctx: Context, config: String) {
+    fun startAmneziaWireGuard(ctx: Context, config: String, excludedAppsJson: String?) {
         val i = Intent(ctx, CSAmneziaWireGuardService::class.java).apply {
             action = CSAmneziaWireGuardService.ACTION_START
             putExtra(CSAmneziaWireGuardService.EXTRA_AWG_CONFIG, config)
+            if (!excludedAppsJson.isNullOrBlank()) {
+                putExtra(CSAmneziaWireGuardService.EXTRA_EXCLUDED_APPS_JSON, excludedAppsJson)
+            }
         }
         startCompat(ctx, i, true)
     }
@@ -140,12 +146,16 @@ object VpnModeSwitcher {
         startCompat(ctx, i, false)
     }
 
-    fun startHysteria(ctx: Context, server: String, auth: String, sni: String) {
+    fun startHysteria(ctx: Context, server: String, auth: String, sni: String, dns: String, excludedAppsJson: String?) {
         val i = Intent(ctx, CSHysteriaService::class.java).apply {
             action = CSHysteriaService.ACTION_START
             putExtra(CSHysteriaService.EXTRA_SERVER, server)
             putExtra(CSHysteriaService.EXTRA_AUTH, auth)
             putExtra(CSHysteriaService.EXTRA_SNI, sni)
+            putExtra(CSHysteriaService.EXTRA_DNS, dns)
+            if (!excludedAppsJson.isNullOrBlank()) {
+                putExtra(CSHysteriaService.EXTRA_EXCLUDED_APPS_JSON, excludedAppsJson)
+            }
         }
         startCompat(ctx, i, true)
     }

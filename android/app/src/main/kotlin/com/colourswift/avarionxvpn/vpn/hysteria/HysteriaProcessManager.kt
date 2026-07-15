@@ -8,7 +8,8 @@ import java.util.concurrent.Future
 
 class HysteriaProcessManager(
     private val context: Context,
-    private val stats: HysteriaVpnStats
+    private val stats: HysteriaVpnStats,
+    private val socksPort: Int = 1080
 ) {
     private val ioExecutor = Executors.newCachedThreadPool()
 
@@ -17,7 +18,6 @@ class HysteriaProcessManager(
     private var stderrFuture: Future<*>? = null
 
     private val socksHost = "127.0.0.1"
-    private val socksPort = 1080
 
     fun start(configFile: File): HysteriaProcessHandle {
         stop()
@@ -104,10 +104,6 @@ class HysteriaProcessManager(
 
     fun localSocksEndpoint(): InetSocketAddress {
         return InetSocketAddress(socksHost, socksPort)
-    }
-
-    fun binaryFile(): File {
-        return File(context.filesDir, "hysteria")
     }
 }
 

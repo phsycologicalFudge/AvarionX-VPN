@@ -2,7 +2,6 @@ package com.colourswift.avarionxvpn.vpn
 
 import android.content.Context
 import android.util.Base64
-import android.util.Log
 import org.json.JSONObject
 
 object CsvpnCloudPrefs {
@@ -21,40 +20,29 @@ object CsvpnCloudPrefs {
     }
 
     fun cloudUrl(ctx: Context): String {
-        val v = prefs(ctx).getString(PREF_CLOUD_URL, null)
-        val s = v?.trim().orEmpty()
-        val url = if (s.isNotEmpty()) s else DEFAULT_CLOUD_URL
-        Log.i("CSVpn", "cloudUrl() -> $url")
-        return url
+        val s = prefs(ctx).getString(PREF_CLOUD_URL, null)?.trim().orEmpty()
+        return if (s.isNotEmpty()) s else DEFAULT_CLOUD_URL
     }
 
     fun cloudPlan(ctx: Context): String {
-        val v = prefs(ctx).getString(PREF_CLOUD_PLAN, null)
-        val s = v?.trim()?.lowercase().orEmpty()
-        val plan = if (s == "pro") "pro" else "free"
-        Log.i("CSVpn", "cloudPlan() -> $plan (raw=$v)")
-        return plan
+        val s = prefs(ctx).getString(PREF_CLOUD_PLAN, null)?.trim()?.lowercase().orEmpty()
+        return if (s == "pro") "pro" else "free"
     }
 
     fun cloudClientId(ctx: Context): String? {
-        val v = prefs(ctx).getString(PREF_CLIENT_ID, null)
-        val s = v?.trim().orEmpty()
-        val id = if (s.isNotEmpty()) s else null
-        Log.i("CSVpn", "cloudClientId() -> $id")
-        return id
+        val s = prefs(ctx).getString(PREF_CLIENT_ID, null)?.trim().orEmpty()
+        return if (s.isNotEmpty()) s else null
     }
 
     fun cloudResolverIp(ctx: Context): String {
-        val v = prefs(ctx).getString(PREF_CLOUD_RESOLVER, null)
-        val s = v?.trim().orEmpty()
-        val ip = if (s.isNotEmpty()) s else "1.1.1.1"
-        Log.i("CSVpn", "cloudResolverIp() -> $ip")
-        return ip
+        val s = prefs(ctx).getString(PREF_CLOUD_RESOLVER, null)?.trim().orEmpty()
+        return if (s.isNotEmpty()) s else "1.1.1.1"
     }
 
     fun cloudSettingsB64(ctx: Context): String? {
-        val listsJson = prefs(ctx).getString(PREF_CLOUD_ENABLED_LISTS, null)
-        val resolver = prefs(ctx).getString(PREF_CLOUD_RESOLVER, null)
+        val p = prefs(ctx)
+        val listsJson = p.getString(PREF_CLOUD_ENABLED_LISTS, null)
+        val resolver = p.getString(PREF_CLOUD_RESOLVER, null)
 
         val obj = JSONObject()
 
@@ -70,14 +58,9 @@ object CsvpnCloudPrefs {
             obj.put("resolver", r)
         }
 
-        if (obj.length() == 0) {
-            Log.i("CSVpn", "cloudSettingsB64() no settings to send")
-            return null
-        }
+        if (obj.length() == 0) return null
 
         val raw = obj.toString().toByteArray(Charsets.UTF_8)
-        val out = Base64.encodeToString(raw, Base64.NO_WRAP)
-        Log.i("CSVpn", "cloudSettingsB64() built payload=${obj.toString()} length=${raw.size}")
-        return out
+        return Base64.encodeToString(raw, Base64.NO_WRAP)
     }
 }

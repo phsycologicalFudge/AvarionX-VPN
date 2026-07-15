@@ -47,14 +47,18 @@ object CsvpnCloudClient {
             conn.readTimeout = 3500
             conn.doOutput = true
             conn.setRequestProperty("Content-Type", "application/json")
+            conn.setRequestProperty("Connection", "keep-alive")
             conn.setRequestProperty("x-plan", plan)
             if (clientId != null) conn.setRequestProperty("x-client-id", clientId)
 
             conn.outputStream.use { it.write(bodyBytes) }
 
             val code = conn.responseCode
-            val stream = if (code in 200..299) conn.inputStream else conn.errorStream
-            val raw = stream?.readBytes() ?: ByteArray(0)
+            val raw = if (code in 200..299) {
+                conn.inputStream.use { it.readBytes() }
+            } else {
+                conn.errorStream?.use { it.readBytes() } ?: ByteArray(0)
+            }
             if (raw.isEmpty()) return Pair(null, null)
 
             val respJson = JSONObject(String(raw, Charsets.UTF_8))
@@ -62,8 +66,6 @@ object CsvpnCloudClient {
             val meta = respJson.optJSONObject("meta")
 
             val dnsReply = Base64.decode(dnsB64, Base64.DEFAULT)
-
-            CsvpnUsage.bumpUsageCountDirect(ctx)
 
             val metaMap = mutableMapOf<String, Any?>()
             metaMap["ts_ms"] = meta?.optLong("ts_ms", System.currentTimeMillis()) ?: System.currentTimeMillis()

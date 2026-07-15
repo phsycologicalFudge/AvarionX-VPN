@@ -13,27 +13,25 @@ class BootReceiver : BroadcastReceiver() {
         if (intent.action == Intent.ACTION_BOOT_COMPLETED) {
 
             Handler(Looper.getMainLooper()).postDelayed({
-                try {
-                    val realtime = Intent(context, CSForegroundService::class.java)
-                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-                        context.startForegroundService(realtime)
-                    } else {
-                        context.startService(realtime)
+                if (vpnAutoStartEnabled(context)) {
+                    try {
+                        val vpn = Intent(context, CSVpnService::class.java).apply {
+                            action = CSVpnService.ACTION_START
+                        }
+                        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                            context.startForegroundService(vpn)
+                        } else {
+                            context.startService(vpn)
+                        }
+                    } catch (_: Exception) {
                     }
-                } catch (e: Exception) {
-                }
-
-                try {
-                    val vpn = Intent(context, CSVpnService::class.java)
-                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-                        context.startForegroundService(vpn)
-                    } else {
-                        context.startService(vpn)
-                    }
-                } catch (e: Exception) {
                 }
             }, 7000)
         }
     }
-}
 
+    private fun vpnAutoStartEnabled(context: Context): Boolean {
+        val prefs = context.getSharedPreferences("cs_dns_cloud", Context.MODE_PRIVATE)
+        return prefs.getBoolean("vpn_autostart_enabled", false)
+    }
+}

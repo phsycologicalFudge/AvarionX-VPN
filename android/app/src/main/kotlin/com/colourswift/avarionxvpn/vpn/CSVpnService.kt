@@ -23,7 +23,6 @@ class CSVpnService : VpnService() {
         private const val KEY_ALWAYS_ON_APP = "always_on_vpn_app"
         private const val KEY_ALWAYS_ON_LOCKDOWN = "always_on_vpn_lockdown"
 
-        @Volatile internal lateinit var instanceContext: Context
         @Volatile var isRunning: Boolean = false
 
         fun snapshotLockdownState(ctx: Context): Map<String, Any?> {
@@ -58,6 +57,7 @@ class CSVpnService : VpnService() {
         }
     }
 
+    @Volatile
     private var tun: ParcelFileDescriptor? = null
 
     private val serviceJob = SupervisorJob()
@@ -69,6 +69,9 @@ class CSVpnService : VpnService() {
 
     @Volatile
     private var shouldStop = false
+
+    @Volatile
+    private var starting = false
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         val action = intent?.action
@@ -94,41 +97,57 @@ class CSVpnService : VpnService() {
         startTunnel()
         return START_STICKY
     }
-
     private fun startTunnel() {
         if (tun != null) {
             Log.i("CSVpn", "startTunnel called but tun already exists")
             return
         }
-
-        shouldStop = false
-
-        val builder = Builder()
-            .setSession("CS DNS Protection")
-            .addAddress(tunIp, 32)
-            .addDnsServer(fakeDnsIp)
-            .addRoute(fakeDnsIp, 32)
-
-        AppWifiRules.applyToBuilderIfWifiAndLockdown(this, builder)
-
-        Log.i("CSVpn", "Establishing TUN with tunIp=$tunIp fakeDnsIp=$fakeDnsIp")
-
-        CsvpnUsage.ensureUsageWindowAndLimit(applicationContext)
-
-        tun = builder.establish()
-
-        if (tun == null) {
-            Log.e("CSVpn", "Failed to establish TUN")
-            stopSelf()
+        if (starting) {
+            Log.i("CSVpn", "startTunnel called but already starting")
             return
         }
 
+        starting = true
+        shouldStop = false
+
         tunnelJob?.cancel()
         tunnelJob = scope.launch {
-            Log.i("CSVpn", "runTunnelLoop starting")
+            val builder = Builder()
+                .setSession("CS DNS Protection")
+                .addAddress(tunIp, 32)
+                .addDnsServer(fakeDnsIp)
+                .addRoute(fakeDnsIp, 32)
+
+            AppWifiRules.applyToBuilderIfWifiAndLockdown(this@CSVpnService, builder)
+
+            Log.i("CSVpn", "Establishing TUN with tunIp=$tunIp fakeDnsIp=$fakeDnsIp")
+
+            CsvpnUsage.ensureUsageWindowAndLimit(applicationContext)
+
+            val established = try {
+                builder.establish()
+            } catch (t: Throwable) {
+                Log.e("CSVpn", "establish threw", t)
+                null
+            }
+
+            if (established == null) {
+                Log.e("CSVpn", "Failed to establish TUN")
+                tun = null
+                isRunning = false
+                starting = false
+                stopSelf()
+                return@launch
+            }
+
+            tun = established
+            isRunning = true
+            starting = false
+            Log.i("CSVpn", "Tunnel started; runTunnelLoop starting")
+
             CsvpnTunnelLoop.run(
                 service = this@CSVpnService,
-                tun = tun,
+                tun = established,
                 shouldStop = { shouldStop },
                 fakeDnsIp = fakeDnsIp,
                 cloudResolve = { dnsQuery: ByteArray, qname: String? ->
@@ -137,13 +156,12 @@ class CSVpnService : VpnService() {
             )
             Log.i("CSVpn", "runTunnelLoop exited")
         }
-
-        Log.i("CSVpn", "Tunnel started")
     }
 
     private fun stopTunnel() {
         Log.i("CSVpn", "stopTunnel called")
         shouldStop = true
+        starting = false
 
         try { tun?.close() } catch (_: Exception) {}
         tun = null

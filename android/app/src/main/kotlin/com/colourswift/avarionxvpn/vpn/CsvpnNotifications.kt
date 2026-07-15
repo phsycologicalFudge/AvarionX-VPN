@@ -4,6 +4,7 @@ import android.app.Notification
 import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.app.PendingIntent
+import android.content.Context
 import android.content.Intent
 import android.content.pm.ServiceInfo
 import android.os.Build
@@ -30,9 +31,9 @@ object CsvpnNotifications {
         }
     }
 
-    private fun buildSummaryNotification(pi: PendingIntent): Notification {
+    private fun buildSummaryNotification(ctx: Context, pi: PendingIntent): Notification {
         return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            Notification.Builder(CSVpnService.instanceContext, PROTECTION_CHANNEL_ID)
+            Notification.Builder(ctx, PROTECTION_CHANNEL_ID)
                 .setContentTitle("AVarionX")
                 .setContentText("Protection active")
                 .setSmallIcon(R.drawable.ic_notification)
@@ -42,7 +43,7 @@ object CsvpnNotifications {
                 .setGroupSummary(true)
                 .build()
         } else {
-            Notification.Builder(CSVpnService.instanceContext)
+            Notification.Builder(ctx)
                 .setContentTitle("AVarionX")
                 .setContentText("Protection active")
                 .setSmallIcon(R.drawable.ic_notification)
@@ -54,11 +55,11 @@ object CsvpnNotifications {
         }
     }
 
-    private fun buildVpnNotification(pi: PendingIntent): Notification {
+    private fun buildVpnNotification(ctx: Context, pi: PendingIntent): Notification {
         val title = "DNS Protection Active"
         val text = "Device protected"
         return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            Notification.Builder(CSVpnService.instanceContext, PROTECTION_CHANNEL_ID)
+            Notification.Builder(ctx, PROTECTION_CHANNEL_ID)
                 .setContentTitle(title)
                 .setContentText(text)
                 .setSmallIcon(R.drawable.ic_notification)
@@ -68,7 +69,7 @@ object CsvpnNotifications {
                 .setGroup(GROUP_KEY)
                 .build()
         } else {
-            Notification.Builder(CSVpnService.instanceContext)
+            Notification.Builder(ctx)
                 .setContentTitle(title)
                 .setContentText(text)
                 .setSmallIcon(R.drawable.ic_notification)
@@ -81,7 +82,7 @@ object CsvpnNotifications {
     }
 
     fun startForegroundNotif(service: CSVpnService) {
-        CSVpnService.instanceContext = service.applicationContext
+        val ctx = service.applicationContext
         val mgr = service.getSystemService(NotificationManager::class.java)
         ensureProtectionChannel(mgr)
 
@@ -92,8 +93,8 @@ object CsvpnNotifications {
             PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT
         )
 
-        mgr.notify(SUMMARY_ID, buildSummaryNotification(pi))
-        val n = buildVpnNotification(pi)
+        mgr.notify(SUMMARY_ID, buildSummaryNotification(ctx, pi))
+        val n = buildVpnNotification(ctx, pi)
 
         Log.i("CSVpn", "Starting foreground")
         ServiceCompat.startForeground(
