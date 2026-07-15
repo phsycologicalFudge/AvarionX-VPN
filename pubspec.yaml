@@ -50,6 +50,7 @@ dependencies:
 
 dev_dependencies:
   flutter_launcher_icons: ^0.14.1
+  flutter_native_splash: ^2.4.3
   flutter_test:
     sdk: flutter
   flutter_lints: ^4.0.0
@@ -63,6 +64,7 @@ flutter:
     - assets/globe/
     - assets/sound_effects/
     - assets/images/night_lights.jpg
+    - assets/splash/
   shaders:
     - assets/shaders/day_night.frag
 
@@ -71,4 +73,12 @@ flutter_launcher_icons:
   ios: false
   image_path: "assets/icons/logo.png"
   remove_alpha_ios: true
+
+flutter_native_splash:
+  color: "#062371"
+  image: assets/splash/splash_logo.png
+  android_12:
+    image: assets/splash/splash_logo.png
+    icon_background_color: "#062371"
+  fullscreen: true
 
