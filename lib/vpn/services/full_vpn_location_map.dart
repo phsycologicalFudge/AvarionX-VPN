@@ -2,7 +2,6 @@ import 'dart:async';
 import 'dart:math' as math;
 import 'dart:typed_data';
 import 'dart:ui' as ui;
-import 'package:colourswift_av/vpn/services/twoDmapLighting/D/N_cycle.dart';
 
 import 'full_vpn_server_locations.dart';
 import 'package:flutter/material.dart';
@@ -737,7 +736,6 @@ class _FullVpnLocationMapCardState extends State<FullVpnLocationMapCard>
                         tileDisplay: const TileDisplay.instantaneous(),
                       ),
                     ),
-                    const VpnDayNightLayer(),
                     if (showRoute)
                       AnimatedConnectingRouteLayer(
                         from: _ipCenter(),

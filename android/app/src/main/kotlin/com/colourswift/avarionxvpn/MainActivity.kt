@@ -9,6 +9,7 @@ import android.provider.Settings
 import androidx.annotation.NonNull
 import androidx.core.content.ContextCompat
 import com.colourswift.avarionxvpn.vpn.CSVpnService
+import com.colourswift.avarionxvpn.vpn.backend_port.core.VpnConnectionController
 import com.colourswift.avarionxvpn.vpn.VpnModeSwitcher
 import com.colourswift.avarionxvpn.vpn.amnezia.CSAmneziaWireGuardService
 import com.colourswift.avarionxvpn.vpn.wireguard.CSWireGuardService
@@ -74,8 +75,10 @@ object CsDnsEvents {
 
 class MainActivity : FlutterFragmentActivity() {
     private val REQ_WG_VPN = 9911
+    private val REQ_MANAGED_VPN = 9912
     private val REQ_DNS_VPN_PERMISSION = 777
 
+    private var pendingConnectPremium: Boolean? = null
     private var pendingWgConfig: String? = null
     private var pendingWgExcludedAppsJson: String? = null
     private var pendingVpnPermissionResult: MethodChannel.Result? = null
@@ -104,6 +107,17 @@ class MainActivity : FlutterFragmentActivity() {
 
     override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
         super.onActivityResult(requestCode, resultCode, data)
+
+        if (requestCode == REQ_MANAGED_VPN) {
+            val premium = pendingConnectPremium
+            pendingConnectPremium = null
+
+            if (resultCode == RESULT_OK && premium != null) {
+                VpnConnectionController.connect(premium)
+            }
+
+            return
+        }
 
         if (requestCode == REQ_WG_VPN) {
             val wgCfg = pendingWgConfig
@@ -389,6 +403,22 @@ class MainActivity : FlutterFragmentActivity() {
                 }
             }
 
+        EventChannel(flutterEngine.dartExecutor.binaryMessenger, "cs_vpn_status")
+            .setStreamHandler(object : EventChannel.StreamHandler {
+                private var sink: EventChannel.EventSink? = null
+
+                override fun onListen(arguments: Any?, events: EventChannel.EventSink?) {
+                    sink = events
+                    CsVpnStatusEvents.addSink(events)
+                    VpnConnectionController.addObserver(CsVpnStatusEvents)
+                }
+
+                override fun onCancel(arguments: Any?) {
+                    CsVpnStatusEvents.removeSink(sink)
+                    sink = null
+                }
+            })
+
         EventChannel(flutterEngine.dartExecutor.binaryMessenger, "cs_dns_events")
             .setStreamHandler(object : EventChannel.StreamHandler {
                 private var sink: EventChannel.EventSink? = null
@@ -407,6 +437,36 @@ class MainActivity : FlutterFragmentActivity() {
         MethodChannel(flutterEngine.dartExecutor.binaryMessenger, "cs_fullvpn")
             .setMethodCallHandler { call, result ->
                 when (call.method) {
+                    "connectManaged" -> {
+                        val premium = call.argument<Boolean>("premium") ?: false
+                        val prep = VpnService.prepare(this@MainActivity)
+
+                        if (prep != null) {
+                            pendingConnectPremium = premium
+                            startActivityForResult(prep, REQ_MANAGED_VPN)
+                            result.success(mapOf("permission" to true, "started" to false))
+                            return@setMethodCallHandler
+                        }
+
+                        VpnConnectionController.connect(premium)
+                        result.success(mapOf("permission" to false, "started" to true))
+                    }
+
+                    "switchServerManaged" -> {
+                        val premium = call.argument<Boolean>("premium") ?: false
+                        VpnConnectionController.connect(premium)
+                        result.success(true)
+                    }
+
+                    "disconnectManaged" -> {
+                        VpnConnectionController.disconnect()
+                        result.success(true)
+                    }
+
+                    "runtimeSnapshot" -> {
+                        result.success(CsVpnStatusEvents.toMap(VpnConnectionController.snapshot()))
+                    }
+
                     "connect" -> {
                         val cfg = call.arguments as? String ?: ""
                         if (cfg.isBlank()) {

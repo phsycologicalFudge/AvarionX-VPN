@@ -128,18 +128,6 @@ extension _FullVpnControllerStorage on FullVpnController {
     await prefs.setString("networkProtectionMode", "off");
   }
 
-  Future<String> _getOrCreateDeviceId() async {
-    final prefs = await SharedPreferences.getInstance();
-    final existing = prefs.getString(FullVpnController.kDeviceId) ?? "";
-    if (existing.isNotEmpty) return existing;
-
-    final now = DateTime.now().millisecondsSinceEpoch;
-    final r = base64Url.encode(List<int>.generate(24, (i) => (now + i * 997) & 0xff));
-    final id = "android_$r";
-    await prefs.setString(FullVpnController.kDeviceId, id);
-    return id;
-  }
-
   String _randomOpaqueId() {
     final r = Random.secure();
     final bytes = List<int>.generate(32, (_) => r.nextInt(256));
@@ -171,29 +159,6 @@ extension _FullVpnControllerStorage on FullVpnController {
     final created = _randomOpaqueId();
     await prefs.setString(FullVpnController.kAnonymousDeviceKeyFallback, created);
     return created;
-  }
-
-  Future<Map<String, String>> _getOrCreateKeypair() async {
-    final prefs = await SharedPreferences.getInstance();
-    final priv = prefs.getString(FullVpnController.kWgPriv) ?? "";
-    final pub = prefs.getString(FullVpnController.kWgPub) ?? "";
-
-    if (priv.isNotEmpty && pub.isNotEmpty) {
-      return {"private": priv, "public": pub};
-    }
-
-    final algo = X25519();
-    final kp = await algo.newKeyPair();
-    final pubKey = await kp.extractPublicKey();
-    final privBytes = await kp.extractPrivateKeyBytes();
-
-    final privB64 = base64Encode(privBytes);
-    final pubB64 = base64Encode(pubKey.bytes);
-
-    await prefs.setString(FullVpnController.kWgPriv, privB64);
-    await prefs.setString(FullVpnController.kWgPub, pubB64);
-
-    return {"private": privB64, "public": pubB64};
   }
 
   Future<void> _syncAccountEntitlementToLocalPro() async {

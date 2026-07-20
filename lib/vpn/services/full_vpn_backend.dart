@@ -5,7 +5,6 @@ import 'dart:convert';
 import 'dart:io';
 import 'dart:math';
 import 'package:colourswift_av/vpn/services/sound_controller/vpn_sound_controller.dart';
-import 'package:cryptography/cryptography.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 import 'package:http/http.dart' as http;
@@ -19,6 +18,7 @@ import 'full_vpn_server_locations.dart';
 
 part 'parts/full_vpn_controller_storage.dart';
 part 'parts/full_vpn_controller_network.dart';
+part 'parts/full_vpn_controller_runtime.dart';
 
 
 class FullVpnController extends ChangeNotifier {
@@ -53,9 +53,7 @@ class FullVpnController extends ChangeNotifier {
   });
 
   Timer? _usageTimer;
-  Timer? _runtimeSyncTimer;
   Timer? _serverStatusTimer;
-  Timer? _probeTimer;
   Timer? _locationsTimer;
   final VpnSoundController soundController = VpnSoundController();
 
@@ -72,8 +70,21 @@ class FullVpnController extends ChangeNotifier {
   Map<String, dynamic>? _me;
   bool _connected = false;
   bool _disposed = false;
+  StreamSubscription? _runtimeSub;
   bool _connectingUi = false;
   DateTime? _connectStartedAt;
+
+  bool _wantsConnected = false;
+  bool _reconnecting = false;
+  int _reconnectAttempt = 0;
+  int _lastHandshakeMs = 0;
+  DateTime? _lastProbeSuccessAt;
+
+  static const Duration _initialHealthGrace = Duration(seconds: 20);
+  static const Duration _recentProbeSuccessWindow = Duration(seconds: 45);
+  static const int _probeFailuresBeforeReconnect = 3;
+
+  static const List<int> _reconnectBackoffsMs = [2000, 5000, 10000, 20000, 30000];
 
   bool _showFlagMarkers = false;
 
@@ -133,6 +144,7 @@ class FullVpnController extends ChangeNotifier {
   Map<String, dynamic>? get me => _me;
   bool get connected => _connected;
   bool get connectingUi => _connectingUi;
+  bool get reconnecting => _reconnecting;
   dynamic get loc => _loc;
   int get usedBytes => _usedBytes;
   int get limitBytes => _limitBytes;
@@ -304,14 +316,6 @@ class FullVpnController extends ChangeNotifier {
     return "WireGuard";
   }
 
-  void _startProbePolling() {
-    _probeTimer?.cancel();
-    _probeTimer = Timer.periodic(const Duration(seconds: 30), (_) async {
-      if (_disposed || !_connected) return;
-      await _probeHttps("https://cp.cloudflare.com/generate_204");
-      await _measureLatency();
-    });
-  }
 
   void _net(String msg) {
     final line = "${DateTime.now().toIso8601String()} $msg";
@@ -356,8 +360,9 @@ class FullVpnController extends ChangeNotifier {
     _showFlagMarkers = (await SharedPreferences.getInstance()).getBool(kShowFlagMarkers) ?? false;
     await _loadToken();
     await _loadLastLocation();
-    await _syncWithRuntime();
-    _startRuntimeSync();
+
+    await _startRuntimeBridgeImpl();
+    await _refreshRuntimeOnceImpl();
     unawaited(fetchLocations());
     _startLocationsPolling();
 
@@ -387,7 +392,7 @@ class FullVpnController extends ChangeNotifier {
   }
 
   Future<void> onResumed() async {
-    await _syncWithRuntime();
+    await _refreshRuntimeOnceImpl();
     await _loadToken();
     unawaited(fetchLocations());
     if (_locationsTimer == null) _startLocationsPolling();
@@ -410,10 +415,6 @@ class FullVpnController extends ChangeNotifier {
     await fetchServerStatus();
     if (_usageTimer == null) _startUsagePolling();
     if (_serverStatusTimer == null) _startServerStatusPolling();
-
-    if (_connected) {
-      unawaited(_probeHttps("https://cp.cloudflare.com/generate_204"));
-    }
   }
 
   Future<void> setTokenFromLogin(String t) async {
@@ -453,95 +454,35 @@ class FullVpnController extends ChangeNotifier {
       return;
     }
 
-    await _runBusy(() async {
-      await _connectInternal();
-    });
+    await _connectManagedImpl();
   }
 
   Future<void> disconnect() async {
-    await _runBusy(() async {
-      _connectingUi = false;
-      _connectedAt = null;
-      _status = "Disconnecting...";
-      notifyListeners();
-
-      try {
-        _net("disconnect invoking ${_stopMethodName()}");
-        await vpnChannel.invokeMethod(_stopMethodName());
-      } catch (e) {
-        _net("disconnect stop invoke error=$e");
-      }
-
-      await _setGlobalModeOff();
-      _stopUsagePolling();
-      _stopStatsPolling();
-
-      await _syncWithRuntime();
-      await refreshLocation(force: true);
-
-      _status = "Disconnected.";
-      notifyListeners();
-    });
+    await _disconnectManagedImpl();
+    await _setGlobalModeOff();
+    _stopUsagePolling();
+    await refreshLocation(force: true);
+    notifyListeners();
   }
 
   Future<void> switchServer(FullVpnServerLocation s) async {
     if (_busy) return;
 
-    final wasConnected = _connected;
-    final previousServerId = _selectedServerId;
-
-    String previousTransport() {
-      final id = previousServerId.toLowerCase();
-      final parts = id.split("-").where((e) => e.isNotEmpty).toList();
-
-      if (parts.isNotEmpty && parts.first == "hy") {
-        return "hysteria";
-      }
-
-      if (parts.isNotEmpty && parts.first == "awg") {
-        return "amnezia";
-      }
-
-      return _vpnTransport;
-    }
-
-    final prevTransport = previousTransport();
-
-    _selectedServerId = s.id;
     _status = "Selected ${s.label}";
     notifyListeners();
 
-    await _persistSelectedServer();
-    await _syncWithRuntime();
     await fetchServerStatus();
 
-    if (!wasConnected) return;
-
-    await _runBusy(() async {
-      _connectingUi = true;
+    if (_wantsConnected) {
       _status = "Switching to ${s.label}...";
       notifyListeners();
+    }
 
-      try {
-        if (prevTransport == "hysteria") {
-          _net("switchServer invoking stopHysteria");
-          await vpnChannel.invokeMethod("stopHysteria");
-        } else if (prevTransport == "amnezia") {
-          _net("switchServer invoking stopAmneziaWireGuard");
-          await vpnChannel.invokeMethod("stopAmneziaWireGuard");
-        } else {
-          _net("switchServer invoking stopWireGuard");
-          await vpnChannel.invokeMethod("stopWireGuard");
-        }
-      } catch (e) {
-        _net("switchServer stop invoke error=$e");
-      }
+    await _switchServerManagedImpl(s);
 
-      await _setGlobalModeOff();
-      await _syncWithRuntime();
+    if (_wantsConnected) {
       await refreshLocation(force: true);
-      await _connectInternal();
-    });
+    }
   }
 
   void selectServerPreview(FullVpnServerLocation s) {
@@ -700,10 +641,9 @@ class FullVpnController extends ChangeNotifier {
   void dispose() {
     _disposed = true;
     _usageTimer?.cancel();
-    _runtimeSyncTimer?.cancel();
     _serverStatusTimer?.cancel();
-    _probeTimer?.cancel();
     _locationsTimer?.cancel();
+    unawaited(_stopRuntimeBridgeImpl());
     soundController.dispose();
     super.dispose();
   }
@@ -789,238 +729,6 @@ class FullVpnController extends ChangeNotifier {
     _locationsTimer = null;
   }
 
-  Future<void> _connectInternal() async {
-    if (_disposed) return;
-
-    _connectingUi = true;
-    _connectStartedAt = DateTime.now();
-    _status = "Connecting...";
-    notifyListeners();
-
-    final notifStatus = await Permission.notification.status;
-    if (_disposed) return;
-
-    if (!notifStatus.isGranted) {
-      final notif = await Permission.notification.request();
-      if (_disposed) return;
-
-      if (!notif.isGranted) {
-        _connectingUi = false;
-        _status = "Notifications permission required.";
-        notifyListeners();
-        return;
-      }
-    }
-
-    final ok = await _requestVpnPermission();
-    if (_disposed) return;
-
-    if (!ok) {
-      _connectingUi = false;
-      _status = "VPN permission not granted.";
-      notifyListeners();
-      return;
-    }
-
-    final conflict = await _isAnotherVpnActive();
-    if (_disposed) return;
-
-    if (conflict) {
-      _connectingUi = false;
-      _status = "Another VPN is active. Disable it first.";
-      notifyListeners();
-      return;
-    }
-
-    if (_token.isNotEmpty) {
-      await refreshMe();
-      if (_disposed) return;
-    }
-
-    final deviceId = _token.isNotEmpty ? await _getOrCreateDeviceId() : "";
-    if (_disposed) return;
-
-    final anonymousDeviceKey = _token.isEmpty ? await _getOrCreateAnonymousDeviceKey() : "";
-    if (_disposed) return;
-
-    if (_token.isEmpty && anonymousDeviceKey.isEmpty) {
-      _connectingUi = false;
-      _status = "Failed to create device key.";
-      notifyListeners();
-      return;
-    }
-
-    final kp = await _getOrCreateKeypair();
-    if (_disposed) return;
-
-    if (!hasPremiumAccess && (_selectedServerIsAwg || _selectedServerIsHysteria)) {
-      _net("free_user_forcing_standard_pool selected=$_selectedServerId effective=${effectiveConnectServer.id}");
-    }
-
-    final peer = await _provision(
-      deviceId,
-      "Android",
-      kp["public"]!,
-      anonymousDeviceKey: anonymousDeviceKey,
-      region: _selectedProvisionRegion,
-    );
-
-    if (_disposed) return;
-
-    if (peer == null) {
-      _connectingUi = false;
-      notifyListeners();
-      return;
-    }
-
-    final endpoint = (peer["endpoint"] ?? "").toString();
-    final dns = (peer["dns"] as List?)?.map((e) => e.toString()).toList() ?? const [];
-    final assignedIp = (peer["assignedIp"] ?? "").toString();
-    final serverPublicKey = (peer["serverPublicKey"] ?? "").toString();
-    final allowed = (peer["allowedIps"] as List?)?.map((e) => e.toString()).toList() ?? const <String>[];
-    final awg = peer["awg"] is Map ? Map<String, dynamic>.from(peer["awg"] as Map) : null;
-
-    String cfg = "";
-    Map<String, dynamic>? hysteriaArgs;
-
-    if (isHysteriaTransport) {
-      hysteriaArgs = _buildHysteriaArgs(peer);
-    } else {
-      if (assignedIp.isEmpty || endpoint.isEmpty || serverPublicKey.isEmpty || allowed.isEmpty) {
-        _connectingUi = false;
-        _status = "Provision returned incomplete settings.";
-        notifyListeners();
-        return;
-      }
-
-      cfg = _buildWgConfig(
-        privateKeyB64: kp["private"]!,
-        address: assignedIp,
-        serverPublicKeyB64: serverPublicKey,
-        endpoint: endpoint,
-        allowedIps: allowed,
-        dns: dns,
-        awg: awg,
-      );
-
-      final prefs = await SharedPreferences.getInstance();
-      await prefs.setString(kWgConfigLast, cfg);
-
-      if (kDebugMode) {
-        final exported = prefs.getString(kWgConfigLast) ?? "";
-        print("HAS_AWG_S1=${exported.contains("S1 = ")} HAS_AWG_H1=${exported.contains("H1 = ")} HAS_AWG_JC=${exported.contains("Jc = ")} HAS_STEALTH=${exported.contains("CS_Stealth = 1")} HAS_STEALTH_PORT=${exported.contains("CS_StealthPort = ")}");
-        print("=== VPN EXPORT BEGIN ===");
-        print(exported);
-        print("=== VPN EXPORT END ===");
-      }
-    }
-
-    if (_disposed) return;
-
-    try {
-      await AvServiceManager.stopVpn();
-    } catch (_) {}
-
-    try {
-      _status = "Starting $transportLabel...";
-      notifyListeners();
-
-      final sw = Stopwatch()..start();
-
-      if (isHysteriaTransport) {
-        final server = (hysteriaArgs?["server"] ?? "").toString();
-        _status = "HY server=$server";
-      } else if (isAmneziaTransport) {
-        _status = "AWG cfg len=${cfg.length} hasMTU=${cfg.contains("MTU = ")}";
-      } else {
-        _status = "WG cfg len=${cfg.length} hasMTU=${cfg.contains("MTU = ")}";
-      }
-      notifyListeners();
-
-      if (isHysteriaTransport) {
-        _net("hy_start begin region=${_selectedServerId} server=${(hysteriaArgs?["server"] ?? "").toString()}");
-      } else if (isAmneziaTransport) {
-        _net("awg_start begin region=${_selectedServerId} endpoint=$endpoint assignedIp=$assignedIp allowed=${allowed.length} dns=${dns.length} cfgLen=${cfg.length}");
-      } else {
-        _net("wg_start begin region=${_selectedServerId} endpoint=$endpoint assignedIp=$assignedIp allowed=${allowed.length} dns=${dns.length} cfgLen=${cfg.length}");
-      }
-
-      final splitPrefs = await SharedPreferences.getInstance();
-      final excludedPkgs = (splitPrefs.getStringList(kSplitExcludedPkgs) ?? const <String>[])
-          .map((e) => e.trim())
-          .where((e) => e.isNotEmpty)
-          .toList();
-
-      final Map<String, dynamic> startArgs = isHysteriaTransport
-          ? Map<String, dynamic>.from(hysteriaArgs ?? const <String, dynamic>{})
-          : <String, dynamic>{"config": cfg};
-      startArgs["excluded_apps"] = excludedPkgs;
-
-      final r = await vpnChannel.invokeMethod(
-        _startMethodName(),
-        startArgs,
-      );
-
-      sw.stop();
-
-      if (isHysteriaTransport) {
-        _net("hy_start ok in ${sw.elapsedMilliseconds}ms result=${r?.toString() ?? ""}");
-      } else if (isAmneziaTransport) {
-        _net("awg_start ok in ${sw.elapsedMilliseconds}ms result=${r?.toString() ?? ""}");
-      } else {
-        _net("wg_start ok in ${sw.elapsedMilliseconds}ms result=${r?.toString() ?? ""}");
-      }
-
-      if (_disposed) return;
-
-      _status = "$transportLabel start returned in ${sw.elapsedMilliseconds}ms";
-      notifyListeners();
-
-      await _setGlobalModeFull();
-      if (_disposed) return;
-
-      await _syncWithRuntime();
-      if (_disposed) return;
-
-      if (_connected) {
-        await fetchUsage(showSync: !_usageEverLoaded);
-        _startUsagePolling();
-      }
-
-      unawaited(_probeHttps("https://cp.cloudflare.com/generate_204"));
-      unawaited(_measureLatency());
-    } on PlatformException catch (e) {
-      _connectingUi = false;
-
-      if (isHysteriaTransport) {
-        _net("hy_start error $e");
-      } else if (isAmneziaTransport) {
-        _net("awg_start error $e");
-      } else {
-        _net("wg_start error $e");
-      }
-
-      _status = "Failed to start $transportLabel (${e.code}).";
-      notifyListeners();
-      await _syncWithRuntime();
-    } catch (e) {
-      if (_disposed) return;
-
-      _connectingUi = false;
-
-      if (isHysteriaTransport) {
-        _net("hy_start error $e");
-      } else if (isAmneziaTransport) {
-        _net("awg_start error $e");
-      } else {
-        _net("wg_start error $e");
-      }
-
-      _status = "Failed to start $transportLabel ($e).";
-      notifyListeners();
-      await _syncWithRuntime();
-    }
-  }
 
   void _startUsagePolling() {
     _usageTimer?.cancel();
@@ -1053,193 +761,59 @@ class FullVpnController extends ChangeNotifier {
     );
   }
 
-  void _stopProbePolling() {
-    _probeTimer?.cancel();
-    _probeTimer = null;
-  }
 
-  Future<void> _measureLatency() async {
-    if (!_connected) return;
-    try {
-      final sw = Stopwatch()..start();
-      final socket = await Socket.connect(
-        '1.1.1.1',
-        53,
-        timeout: const Duration(seconds: 4),
-      );
-      sw.stop();
-      socket.destroy();
-      _latencyMs = sw.elapsedMilliseconds;
-      notifyListeners();
-    } catch (_) {}
-  }
 
-  Future<void> _pollTunnelStats() async {
-    if (!_connected) {
-      if (_downloadSpeedBps != 0 || _uploadSpeedBps != 0) {
-        _downloadSpeedBps = 0;
-        _uploadSpeedBps = 0;
-        _latencyMs = 0;
-        notifyListeners();
-      }
-      _lastStatsAt = null;
-      return;
-    }
-    try {
-      final result = await vpnChannel.invokeMethod<Map>('getTunnelStats');
-      if (result == null) return;
-      final rx = (result['rxBytes'] as num?)?.toInt() ?? 0;
-      final tx = (result['txBytes'] as num?)?.toInt() ?? 0;
-      final now = DateTime.now();
-      if (_lastStatsAt != null) {
-        final dt = now.difference(_lastStatsAt!).inMilliseconds / 1000.0;
-        if (dt > 0) {
-          _downloadSpeedBps = ((rx - _rxBytes) / dt).clamp(0, double.infinity);
-          _uploadSpeedBps = ((tx - _txBytes) / dt).clamp(0, double.infinity);
-        }
-      }
-      _rxBytes = rx;
-      _txBytes = tx;
-      _lastStatsAt = now;
-      notifyListeners();
-    } catch (_) {}
-  }
 
-  void _stopStatsPolling() {
-    _rxBytes = 0;
-    _txBytes = 0;
-    _lastStatsAt = null;
-    _downloadSpeedBps = 0;
-    _uploadSpeedBps = 0;
-  }
 
-  Future<void> _startRuntimeSync() async {
-    _runtimeSyncTimer?.cancel();
-    _runtimeSyncTimer = Timer.periodic(
-      const Duration(seconds: 1),
-          (_) async {
-        if (_disposed) return;
-        _syncTick++;
-        final active = _connected || _connectingUi || _busy;
-        if (active || _syncTick % 4 == 0) {
-          await _syncWithRuntime();
-        }
-        if (_connected && !_disposed) await _pollTunnelStats();
-      },
-    );
-  }
+
 
   Future<void> _postConnectRefresh() async {
-    for (int i = 0; i < 8; i++) {
-      if (_disposed) return;
-
-      if (_token.isNotEmpty) {
-        try {
-          final res = await http
-              .get(
-            Uri.parse("$apiBase/me"),
-            headers: {"authorization": "Bearer $_token"},
-          )
-              .timeout(const Duration(seconds: 4));
-
-          if (res.statusCode == 200) {
-            final j = jsonDecode(res.body) as Map<String, dynamic>;
-            _me = (j["user"] as Map?)?.cast<String, dynamic>();
-            notifyListeners();
-          } else if (res.statusCode == 401) {
-            await _clearSession();
-            _status = "Session expired. Sign in again.";
-            _connectingUi = false;
-            notifyListeners();
-            return;
-          }
-        } catch (_) {}
-      }
-
-      try {
-        await fetchUsage(showSync: !_usageEverLoaded);
-      } catch (_) {}
-
-      try {
-        await refreshLocation(force: true);
-      } catch (_) {}
-
-      if (!_connected) {
-        _connectingUi = false;
-        notifyListeners();
-        return;
-      }
-
-      if (vpnLocationFresh && uiIp.isNotEmpty) {
-        _status = "Connected.";
-        _connectingUi = false;
-        notifyListeners();
-        return;
-      }
-
-      _status = "Connecting...";
+    if (_disposed || !_wantsConnected || !_connected) {
+      _connectingUi = false;
       notifyListeners();
-
-      await Future.delayed(Duration(milliseconds: 350 + (i * 250)));
+      return;
     }
-
-    if (_connected) {
-      _status = "Connected.";
-    }
+    _status = "Connected.";
     _connectingUi = false;
+    _connectStartedAt = null;
     notifyListeners();
+
+    unawaited(_refreshConnectedMetadata());
   }
 
-  bool _isSyncing = false;
-  int _syncTick = 0;
+  Future<void> _refreshConnectedMetadata() async {
+    if (_disposed || !_connected) return;
 
-  Future<void> _syncWithRuntime() async {
-    if (_isSyncing) return;
-    _isSyncing = true;
+    unawaited(_safeRefreshLocation());
 
-    try {
-      final running = await _isTunnelRunning();
-      final changed = _connected != running;
-
-      _connected = running;
-
-      if (changed && _connected) {
-        _connectedAt = DateTime.now();
-        _loc = null;
-        _locFetchedAt = null;
-        _connectingUi = true;
-        _status = "Connecting...";
-        notifyListeners();
-        unawaited(soundController.playConnect());
-        await _postConnectRefresh();
-        return;
-      }
-
-      if (changed && !_connected) {
-        _connectedAt = null;
-        unawaited(soundController.playDisconnect());
-        notifyListeners();
-        return;
-      }
-
-      if (!_connected && _connectingUi && !_busy) {
-        final started = _connectStartedAt;
-        if (started == null) {
-          _connectingUi = false;
-        } else {
-          final ageMs = DateTime.now().difference(started).inMilliseconds;
-          if (ageMs > 9000) {
-            _connectingUi = false;
-            _connectStartedAt = null;
-          }
-        }
-      }
-
-      if (changed) notifyListeners();
-    } finally {
-      _isSyncing = false;
+    if (_token.isNotEmpty) {
+      try {
+        await refreshMe();
+      } catch (_) {}
     }
+
+    if (_disposed || !_connected) return;
+    try {
+      await fetchUsage(showSync: !_usageEverLoaded);
+    } catch (_) {}
   }
+
+  Future<void> _safeRefreshLocation() async {
+    if (_disposed || !_connected) return;
+    try {
+      await refreshLocation(force: true);
+    } catch (_) {}
+  }
+
+
+
+
+
+
+
+
+
+
 
   Future<bool> _requestVpnPermission() async {
     const chan = MethodChannel("cs_vpn_permission");
@@ -1259,31 +833,9 @@ class FullVpnController extends ChangeNotifier {
     }
   }
 
-  Future<bool> _isTunnelRunning() async {
-    try {
-      return await vpnChannel.invokeMethod<bool>(_isRunningMethodName()) == true;
-    } catch (_) {
-      return false;
-    }
-  }
 
-  String _startMethodName() {
-    if (isHysteriaTransport) return "startHysteria";
-    if (isAmneziaTransport) return "startAmneziaWireGuard";
-    return "startWireGuard";
-  }
 
-  String _stopMethodName() {
-    if (isHysteriaTransport) return "stopHysteria";
-    if (isAmneziaTransport) return "stopAmneziaWireGuard";
-    return "stopWireGuard";
-  }
 
-  String _isRunningMethodName() {
-    if (isHysteriaTransport) return "isHysteriaRunning";
-    if (isAmneziaTransport) return "isAmneziaWireGuardRunning";
-    return "isWireGuardRunning";
-  }
 
   Map<String, dynamic> _buildHysteriaArgs(Map<String, dynamic> peer) {
     final endpoint = (peer["endpoint"] ?? "").toString().trim();
@@ -1303,136 +855,8 @@ class FullVpnController extends ChangeNotifier {
     };
   }
 
-  String _buildWgConfig({
-    required String privateKeyB64,
-    required String address,
-    required String serverPublicKeyB64,
-    required String endpoint,
-    required List<String> allowedIps,
-    required List<String> dns,
-    Map<String, dynamic>? awg,
-  }) {
-    String fixCidr(String a) {
-      final parts = a.split(",").map((e) => e.trim()).where((e) => e.isNotEmpty).toList();
-      final out = <String>[];
-      for (final p in parts) {
-        if (p.contains("/")) {
-          out.add(p);
-          continue;
-        }
-        if (p.contains(":")) {
-          out.add("$p/128");
-        } else {
-          out.add("$p/32");
-        }
-      }
-      return out.join(", ");
-    }
 
-    void writeField(StringBuffer b, String key, dynamic value) {
-      final s = (value ?? "").toString().trim();
-      if (s.isNotEmpty) {
-        b.writeln("$key = $s");
-      }
-    }
 
-    bool asBool(dynamic v) {
-      if (v is bool) return v;
-      if (v is num) return v != 0;
-      if (v is String) {
-        final s = v.trim().toLowerCase();
-        return s == "1" || s == "true" || s == "yes";
-      }
-      return false;
-    }
-
-    int asInt(dynamic v, int fallback) {
-      if (v is int) return v;
-      if (v is num) return v.toInt();
-      if (v is String) return int.tryParse(v.trim()) ?? fallback;
-      return fallback;
-    }
-
-    final mtu = 1280;
-    final stealth = asBool(awg?["stealth"]);
-    final stealthPort = asInt(awg?["stealthPort"], 443);
-
-    final b = StringBuffer();
-    b.writeln("[Interface]");
-    b.writeln("PrivateKey = $privateKeyB64");
-    b.writeln("Address = ${fixCidr(address)}");
-    b.writeln("MTU = $mtu");
-    if (dns.isNotEmpty) {
-      b.writeln("DNS = ${dns.join(", ")}");
-    }
-
-    if (stealth) {
-      b.writeln("CS_Stealth = 1");
-      b.writeln("CS_StealthPort = $stealthPort");
-    }
-
-    if (awg != null) {
-      writeField(b, "S1", awg["S1"]);
-      writeField(b, "S2", awg["S2"]);
-      writeField(b, "S3", awg["S3"]);
-      writeField(b, "S4", awg["S4"]);
-      writeField(b, "H1", awg["H1"]);
-      writeField(b, "H2", awg["H2"]);
-      writeField(b, "H3", awg["H3"]);
-      writeField(b, "H4", awg["H4"]);
-      writeField(b, "Jc", awg["Jc"]);
-      writeField(b, "Jmin", awg["Jmin"]);
-      writeField(b, "Jmax", awg["Jmax"]);
-      writeField(b, "I1", awg["I1"]);
-      writeField(b, "I2", awg["I2"]);
-      writeField(b, "I3", awg["I3"]);
-      writeField(b, "I4", awg["I4"]);
-      writeField(b, "I5", awg["I5"]);
-    }
-
-    b.writeln("");
-    b.writeln("[Peer]");
-    b.writeln("PublicKey = $serverPublicKeyB64");
-    b.writeln("Endpoint = $endpoint");
-    b.writeln("AllowedIPs = ${allowedIps.join(", ")}");
-    b.writeln("PersistentKeepalive = 25");
-    return b.toString();
-  }
-
-  Future<void> _probeHttps(String url) async {
-    try {
-      final uri = Uri.parse(url);
-      final host = uri.host;
-      if (host.isEmpty) return;
-
-      final swDns = Stopwatch()..start();
-      final addrs = await InternetAddress.lookup(host).timeout(const Duration(seconds: 4));
-      swDns.stop();
-      _net("probe dns ok host=$host ms=${swDns.elapsedMilliseconds} addrs=${addrs.map((e) => e.address).take(3).join(",")}");
-
-      final client = HttpClient();
-      client.connectionTimeout = const Duration(seconds: 8);
-
-      final swConn = Stopwatch()..start();
-      final req = await client.openUrl("HEAD", uri).timeout(const Duration(seconds: 8));
-      final resp = await req.close().timeout(const Duration(seconds: 8));
-      swConn.stop();
-
-      try {
-        await resp.drain();
-      } catch (_) {}
-
-      client.close(force: true);
-    } on HandshakeException catch (e) {
-      _net("probe tls_fail url=$url err=$e");
-    } on SocketException catch (e) {
-      _net("probe sock_fail url=$url osError=${e.osError?.message ?? ""} err=$e");
-    } on TimeoutException catch (e) {
-      _net("probe timeout url=$url err=$e");
-    } catch (e) {
-      _net("probe error url=$url err=$e");
-    }
-  }
 
   Future<void> _runBusy(Future<void> Function() fn) async {
     if (_busy) return;

@@ -7,6 +7,7 @@ import android.content.Context
 import android.content.Intent
 import android.os.Build
 import com.colourswift.avarionxvpn.vpn.amnezia.CSAmneziaWireGuardService
+import com.colourswift.avarionxvpn.vpn.backend_port.core.VpnConnectionController
 import com.colourswift.avarionxvpn.vpn.hysteria.CSHysteriaService
 import com.colourswift.avarionxvpn.vpn.wireguard.CSWireGuardService
 
@@ -39,9 +40,12 @@ class VpnNotificationActionReceiver : BroadcastReceiver() {
     }
 
     override fun onReceive(context: Context, intent: Intent) {
+        VpnConnectionController.init(context)
+
         when (intent.action) {
             ACTION_DISCONNECT -> {
                 val mode = intent.getStringExtra(EXTRA_MODE).orEmpty()
+                VpnConnectionController.markExternalDisconnect()
                 cancelResume(context, mode)
                 stopVpn(context, mode)
             }
@@ -50,12 +54,14 @@ class VpnNotificationActionReceiver : BroadcastReceiver() {
                 val mode = intent.getStringExtra(EXTRA_MODE).orEmpty()
                 val minutes = intent.getIntExtra(EXTRA_MINUTES, 5).coerceAtLeast(1)
 
+                VpnConnectionController.markPausedByUser()
                 cancelResume(context, mode)
                 stopVpn(context, mode)
                 scheduleResume(context, intent, mode, minutes)
             }
 
             ACTION_RESUME -> {
+                VpnConnectionController.markResumedFromPause()
                 resumeVpn(context, intent)
             }
         }
@@ -85,15 +91,27 @@ class VpnNotificationActionReceiver : BroadcastReceiver() {
             MODE_WG -> {
                 Intent(context, CSWireGuardService::class.java)
                     .setAction(CSWireGuardService.ACTION_START)
-                    .putExtra(CSWireGuardService.EXTRA_WG_CONFIG, sourceIntent.getStringExtra(EXTRA_WG_CONFIG))
-                    .putExtra(CSWireGuardService.EXTRA_EXCLUDED_APPS_JSON, sourceIntent.getStringExtra(EXTRA_EXCLUDED_APPS_JSON))
+                    .putExtra(
+                        CSWireGuardService.EXTRA_WG_CONFIG,
+                        sourceIntent.getStringExtra(EXTRA_WG_CONFIG)
+                    )
+                    .putExtra(
+                        CSWireGuardService.EXTRA_EXCLUDED_APPS_JSON,
+                        sourceIntent.getStringExtra(EXTRA_EXCLUDED_APPS_JSON)
+                    )
             }
 
             MODE_AWG -> {
                 Intent(context, CSAmneziaWireGuardService::class.java)
                     .setAction(CSAmneziaWireGuardService.ACTION_START)
-                    .putExtra(CSAmneziaWireGuardService.EXTRA_AWG_CONFIG, sourceIntent.getStringExtra(EXTRA_AWG_CONFIG))
-                    .putExtra(CSAmneziaWireGuardService.EXTRA_EXCLUDED_APPS_JSON, sourceIntent.getStringExtra(EXTRA_EXCLUDED_APPS_JSON))
+                    .putExtra(
+                        CSAmneziaWireGuardService.EXTRA_AWG_CONFIG,
+                        sourceIntent.getStringExtra(EXTRA_AWG_CONFIG)
+                    )
+                    .putExtra(
+                        CSAmneziaWireGuardService.EXTRA_EXCLUDED_APPS_JSON,
+                        sourceIntent.getStringExtra(EXTRA_EXCLUDED_APPS_JSON)
+                    )
             }
 
             MODE_HY -> {
@@ -103,7 +121,10 @@ class VpnNotificationActionReceiver : BroadcastReceiver() {
                     .putExtra(CSHysteriaService.EXTRA_AUTH, sourceIntent.getStringExtra(EXTRA_AUTH))
                     .putExtra(CSHysteriaService.EXTRA_SNI, sourceIntent.getStringExtra(EXTRA_SNI))
                     .putExtra(CSHysteriaService.EXTRA_DNS, sourceIntent.getStringExtra(EXTRA_DNS))
-                    .putExtra(CSHysteriaService.EXTRA_EXCLUDED_APPS_JSON, sourceIntent.getStringExtra(EXTRA_EXCLUDED_APPS_JSON))
+                    .putExtra(
+                        CSHysteriaService.EXTRA_EXCLUDED_APPS_JSON,
+                        sourceIntent.getStringExtra(EXTRA_EXCLUDED_APPS_JSON)
+                    )
             }
 
             else -> null
@@ -125,12 +146,18 @@ class VpnNotificationActionReceiver : BroadcastReceiver() {
         when (mode) {
             MODE_WG -> {
                 resumeIntent.putExtra(EXTRA_WG_CONFIG, sourceIntent.getStringExtra(EXTRA_WG_CONFIG))
-                resumeIntent.putExtra(EXTRA_EXCLUDED_APPS_JSON, sourceIntent.getStringExtra(EXTRA_EXCLUDED_APPS_JSON))
+                resumeIntent.putExtra(
+                    EXTRA_EXCLUDED_APPS_JSON,
+                    sourceIntent.getStringExtra(EXTRA_EXCLUDED_APPS_JSON)
+                )
             }
 
             MODE_AWG -> {
                 resumeIntent.putExtra(EXTRA_AWG_CONFIG, sourceIntent.getStringExtra(EXTRA_AWG_CONFIG))
-                resumeIntent.putExtra(EXTRA_EXCLUDED_APPS_JSON, sourceIntent.getStringExtra(EXTRA_EXCLUDED_APPS_JSON))
+                resumeIntent.putExtra(
+                    EXTRA_EXCLUDED_APPS_JSON,
+                    sourceIntent.getStringExtra(EXTRA_EXCLUDED_APPS_JSON)
+                )
             }
 
             MODE_HY -> {
@@ -138,7 +165,10 @@ class VpnNotificationActionReceiver : BroadcastReceiver() {
                 resumeIntent.putExtra(EXTRA_AUTH, sourceIntent.getStringExtra(EXTRA_AUTH))
                 resumeIntent.putExtra(EXTRA_SNI, sourceIntent.getStringExtra(EXTRA_SNI))
                 resumeIntent.putExtra(EXTRA_DNS, sourceIntent.getStringExtra(EXTRA_DNS))
-                resumeIntent.putExtra(EXTRA_EXCLUDED_APPS_JSON, sourceIntent.getStringExtra(EXTRA_EXCLUDED_APPS_JSON))
+                resumeIntent.putExtra(
+                    EXTRA_EXCLUDED_APPS_JSON,
+                    sourceIntent.getStringExtra(EXTRA_EXCLUDED_APPS_JSON)
+                )
             }
         }
 

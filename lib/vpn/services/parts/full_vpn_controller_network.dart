@@ -106,38 +106,46 @@ extension _FullVpnControllerNetwork on FullVpnController {
       headers["authorization"] = "Bearer $_token";
     }
 
-    try {
-      final res = await http.get(uri, headers: headers).timeout(const Duration(milliseconds: 1500));
+    final maxAttempts = force ? 2 : 1;
 
-      if (res.statusCode == 200) {
-        final j = jsonDecode(res.body) as Map<String, dynamic>;
-        _loc = j;
-        _locFetchedAt = DateTime.now();
+    for (var attempt = 1; attempt <= maxAttempts; attempt++) {
+      try {
+        final res = await http.get(uri, headers: headers).timeout(const Duration(milliseconds: 3000));
 
-        final a = locLat();
-        final b = locLon();
-        if (a != null && b != null) {
-          _lastLat = a;
-          _lastLon = b;
-          final prefs = await SharedPreferences.getInstance();
-          await prefs.setDouble(FullVpnController.kLastLat, a);
-          await prefs.setDouble(FullVpnController.kLastLon, b);
+        if (res.statusCode == 200) {
+          final j = jsonDecode(res.body) as Map<String, dynamic>;
+          _loc = j;
+          _locFetchedAt = DateTime.now();
+
+          final a = locLat();
+          final b = locLon();
+          if (a != null && b != null) {
+            _lastLat = a;
+            _lastLon = b;
+            final prefs = await SharedPreferences.getInstance();
+            await prefs.setDouble(FullVpnController.kLastLat, a);
+            await prefs.setDouble(FullVpnController.kLastLon, b);
+          }
+
+          notifyListeners();
+          return;
         }
 
-        notifyListeners();
-        return;
+        if (res.statusCode == 401 && hasAuth) {
+          await _clearSession();
+          _status = "Session expired. Sign in again.";
+          notifyListeners();
+          return;
+        }
+
+        _net("GET $apiBase/vpn/my-ip status=${res.statusCode} attempt=$attempt");
+      } catch (e) {
+        _net("GET $apiBase/vpn/my-ip exception=$e attempt=$attempt");
       }
 
-      if (res.statusCode == 401 && hasAuth) {
-        await _clearSession();
-        _status = "Session expired. Sign in again.";
-        notifyListeners();
-        return;
+      if (attempt < maxAttempts) {
+        await Future.delayed(const Duration(seconds: 2));
       }
-
-      _net("GET $apiBase/vpn/my-ip status=${res.statusCode}");
-    } catch (e) {
-      _net("GET $apiBase/vpn/my-ip exception=$e");
     }
   }
 
@@ -231,81 +239,4 @@ extension _FullVpnControllerNetwork on FullVpnController {
     }
   }
 
-  Future<Map<String, dynamic>?> _provision(
-      String deviceId,
-      String deviceName,
-      String publicKeyB64, {
-        required String region,
-        String anonymousDeviceKey = "",
-      }) async {
-    try {
-      final headers = <String, String>{
-        "content-type": "application/json; charset=utf-8",
-      };
-
-      if (_token.isNotEmpty) {
-        headers["authorization"] = "Bearer $_token";
-      }
-
-      final body = <String, dynamic>{
-        "deviceName": deviceName,
-        "publicKey": publicKeyB64,
-        "region": region,
-      };
-
-      if (_token.isNotEmpty) {
-        body["deviceId"] = deviceId;
-      } else {
-        body["anonymousDeviceKey"] = anonymousDeviceKey;
-      }
-
-      final res = await http
-          .post(
-        Uri.parse("$apiBase/vpn/provision"),
-        headers: headers,
-        body: jsonEncode(body),
-      )
-          .timeout(const Duration(seconds: 8));
-
-      final rawBody = res.body;
-      final bodyText = rawBody.trim();
-
-      _net("POST $apiBase/vpn/provision status=${res.statusCode} bodyLen=${rawBody.length}");
-
-      if (res.statusCode == 200) {
-        final j = jsonDecode(rawBody) as Map<String, dynamic>;
-        return (j["peer"] as Map?)?.cast<String, dynamic>();
-      }
-
-      if (res.statusCode == 401 && _token.isNotEmpty) {
-        await _clearSession();
-        _status = "Session expired. Sign in again.";
-        notifyListeners();
-        return null;
-      }
-
-      if (res.statusCode == 403) {
-        _status = _token.isEmpty
-            ? "Trial limit reached. Sign in or upgrade to continue."
-            : "Your plan is not allowed to use Full VPN.";
-        notifyListeners();
-        return null;
-      }
-
-      _status = bodyText.isEmpty
-          ? "Provision failed (${res.statusCode})."
-          : "Provision failed (${res.statusCode}): $bodyText";
-      notifyListeners();
-      return null;
-    } on TimeoutException {
-      _status = "Provision timed out. Try again.";
-      notifyListeners();
-      return null;
-    } catch (e) {
-      _net("POST $apiBase/vpn/provision exception=$e");
-      _status = "Provision error ($e).";
-      notifyListeners();
-      return null;
-    }
-  }
 }

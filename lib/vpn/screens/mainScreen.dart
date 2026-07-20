@@ -894,20 +894,22 @@ class _FullVpnModeScreenState extends State<FullVpnModeScreen>
 
     final country = c.uiCountry;
 
-    final mapHeader = c.connectingUi
+    final mapHeader = c.reconnecting
+        ? "Reconnecting..."
+        : (c.connectingUi
         ? l10n.vpnStatusConnectingEllipsis
         : (c.connected
         ? (country.isNotEmpty
         ? l10n.vpnStatusConnectedTo(country)
         : l10n.vpnStatusConnected)
-        : l10n.vpnTitleSecure);
+        : l10n.vpnTitleSecure));
 
     final lat = c.locLat() ?? c.lastLat;
     final lon = c.locLon() ?? c.lastLon;
 
     final canConnect =
-        !c.connected && !c.busy && !c.softCapReached && !c.connectingUi;
-    final canDisconnect = c.connected && !c.busy;
+        !c.connected && !c.busy && !c.softCapReached && !c.connectingUi && !c.reconnecting;
+    final canDisconnect = (c.connected || c.reconnecting) && !c.busy;
 
     final connectStyle = ElevatedButton.styleFrom(
       backgroundColor: scheme.primary,
@@ -954,7 +956,7 @@ class _FullVpnModeScreenState extends State<FullVpnModeScreen>
           child: ElevatedButton.icon(
             onPressed: c.busy
                 ? null
-                : c.connected
+                : (c.connected || c.reconnecting)
                 ? (canDisconnect
                 ? () async {
               _notifWorker.resetCache();
@@ -985,8 +987,12 @@ class _FullVpnModeScreenState extends State<FullVpnModeScreen>
               size: 18,
             ),
             label: Text(
-              c.connectingUi
-                  ? l10n.vpnStatusConnectingEllipsis
+              c.reconnecting
+                  ? "Reconnecting..."
+                  : c.connectingUi
+                  ? (c.connected
+                  ? "Connecting... (tap to cancel)"
+                  : l10n.vpnStatusConnectingEllipsis)
                   : c.connected
                   ? l10n.vpnDisconnect
                   : l10n.vpnConnect,

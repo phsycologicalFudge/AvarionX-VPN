@@ -44,7 +44,12 @@ class CSWireGuardService : VpnService() {
             val b = svc.backend ?: return null
             return try {
                 val stats = b.getStatistics(svc.tunnel)
-                mapOf("rxBytes" to stats.totalRx(), "txBytes" to stats.totalTx())
+                var lastHs = 0L
+                for (key in stats.peers()) {
+                    val ps = stats.peer(key) ?: continue
+                    if (ps.latestHandshakeEpochMillis > lastHs) lastHs = ps.latestHandshakeEpochMillis
+                }
+                mapOf("rxBytes" to stats.totalRx(), "txBytes" to stats.totalTx(), "lastHandshake" to lastHs)
             } catch (_: Throwable) {
                 null
             }
