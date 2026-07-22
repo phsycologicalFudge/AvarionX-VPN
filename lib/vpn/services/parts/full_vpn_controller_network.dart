@@ -81,24 +81,35 @@ extension _FullVpnControllerNetwork on FullVpnController {
     }
   }
 
-  Future<void> refreshLocation({bool force = false}) async {
+  static final RegExp _ipv4Pattern = RegExp(
+    r'^(?:(?:25[0-5]|2[0-4]\d|1?\d?\d)\.){3}(?:25[0-5]|2[0-4]\d|1?\d?\d)$',
+  );
+
+  bool _isValidIpv4(dynamic v) {
+    final s = (v ?? "").toString().trim();
+    if (s.isEmpty) return false;
+    return _ipv4Pattern.hasMatch(s);
+  }
+
+  Future<bool> _fetchLocationOnce({
+    required Duration timeout,
+    String expectedIp = "",
+  }) async {
     final hasAuth = _token.isNotEmpty;
     final anonymousDeviceKey = hasAuth ? "" : await _getOrCreateAnonymousDeviceKey();
 
-    if (!hasAuth && anonymousDeviceKey.isEmpty) return;
+    if (!hasAuth && anonymousDeviceKey.isEmpty) return false;
 
-    final now = DateTime.now();
-    if (!force && _locFetchedAt != null) {
-      final age = now.difference(_locFetchedAt!);
-      if (age.inSeconds < 10) return;
+    final queryParams = <String, String>{};
+    if (!hasAuth) {
+      queryParams["anonymousDeviceKey"] = anonymousDeviceKey;
+    }
+    if (expectedIp.isNotEmpty) {
+      queryParams["expectedIp"] = expectedIp;
     }
 
-    final uri = hasAuth
-        ? Uri.parse("$apiBase/vpn/my-ip")
-        : Uri.parse("$apiBase/vpn/my-ip").replace(
-      queryParameters: {
-        "anonymousDeviceKey": anonymousDeviceKey,
-      },
+    final uri = Uri.parse("$apiBase/vpn/my-ip").replace(
+      queryParameters: queryParams.isEmpty ? null : queryParams,
     );
 
     final headers = <String, String>{};
@@ -106,45 +117,73 @@ extension _FullVpnControllerNetwork on FullVpnController {
       headers["authorization"] = "Bearer $_token";
     }
 
-    final maxAttempts = force ? 2 : 1;
+    try {
+      final res = await http.get(uri, headers: headers).timeout(timeout);
 
-    for (var attempt = 1; attempt <= maxAttempts; attempt++) {
-      try {
-        final res = await http.get(uri, headers: headers).timeout(const Duration(milliseconds: 3000));
+      if (res.statusCode == 200) {
+        final j = jsonDecode(res.body) as Map<String, dynamic>;
 
-        if (res.statusCode == 200) {
-          final j = jsonDecode(res.body) as Map<String, dynamic>;
-          _loc = j;
-          _locFetchedAt = DateTime.now();
-
-          final a = locLat();
-          final b = locLon();
-          if (a != null && b != null) {
-            _lastLat = a;
-            _lastLon = b;
-            final prefs = await SharedPreferences.getInstance();
-            await prefs.setDouble(FullVpnController.kLastLat, a);
-            await prefs.setDouble(FullVpnController.kLastLon, b);
+        if (expectedIp.isNotEmpty) {
+          if (j["confirmed"] != true) {
+            _net("GET $apiBase/vpn/my-ip not_confirmed expectedIp=$expectedIp");
+            return false;
           }
-
-          notifyListeners();
-          return;
+          j["ip"] = expectedIp;
+        } else if (!_isValidIpv4(j["ip"])) {
+          _net("GET $apiBase/vpn/my-ip non_ipv4_ip value=${j["ip"]}");
+          return false;
         }
 
-        if (res.statusCode == 401 && hasAuth) {
-          await _clearSession();
-          _status = "Session expired. Sign in again.";
-          notifyListeners();
-          return;
+        _loc = j;
+        _locFetchedAt = DateTime.now();
+
+        final a = locLat();
+        final b = locLon();
+        if (a != null && b != null) {
+          _lastLat = a;
+          _lastLon = b;
+          final prefs = await SharedPreferences.getInstance();
+          await prefs.setDouble(FullVpnController.kLastLat, a);
+          await prefs.setDouble(FullVpnController.kLastLon, b);
         }
 
-        _net("GET $apiBase/vpn/my-ip status=${res.statusCode} attempt=$attempt");
-      } catch (e) {
-        _net("GET $apiBase/vpn/my-ip exception=$e attempt=$attempt");
+        return true;
       }
 
+      if (res.statusCode == 401 && hasAuth) {
+        await _clearSession();
+        _status = "Session expired. Sign in again.";
+        notifyListeners();
+        return false;
+      }
+
+      _net("GET $apiBase/vpn/my-ip status=${res.statusCode}");
+      return false;
+    } catch (e) {
+      _net("GET $apiBase/vpn/my-ip exception=$e");
+      return false;
+    }
+  }
+
+  Future<void> refreshLocation({bool force = false}) async {
+    final now = DateTime.now();
+    if (!force && _locFetchedAt != null) {
+      final age = now.difference(_locFetchedAt!);
+      if (age.inSeconds < 10) return;
+    }
+
+    const maxAttempts = 3;
+    const attemptTimeout = Duration(milliseconds: 1500);
+    const attemptGap = Duration(milliseconds: 500);
+
+    for (var attempt = 1; attempt <= maxAttempts; attempt++) {
+      final ok = await _fetchLocationOnce(timeout: attemptTimeout, expectedIp: _expectedExitIp);
+      if (ok) {
+        notifyListeners();
+        return;
+      }
       if (attempt < maxAttempts) {
-        await Future.delayed(const Duration(seconds: 2));
+        await Future.delayed(attemptGap);
       }
     }
   }

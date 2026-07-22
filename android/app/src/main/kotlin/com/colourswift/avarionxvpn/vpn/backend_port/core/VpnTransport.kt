@@ -46,14 +46,16 @@ object VpnPlanResolver {
             )
         }
 
+        val region = selectedServerId.trim().lowercase().ifEmpty { FREE_REGION }
+
         val transport = when {
-            isHysteriaServer(selectedServerId) -> VpnTransport.HYSTERIA
-            isAwgServer(selectedServerId) -> VpnTransport.AMNEZIA
+            isHysteriaServer(region) -> VpnTransport.HYSTERIA
+            isAwgServer(region) -> VpnTransport.AMNEZIA
             else -> VpnTransport.fromWire(storedTransport)
         }
 
         return ConnectPlan(
-            region = selectedServerId.trim().lowercase(),
+            region = region,
             transport = transport,
             premium = true
         )

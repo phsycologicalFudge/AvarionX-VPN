@@ -19,7 +19,8 @@ data class VpnStatusSnapshot(
     val lastHandshakeMs: Long,
     val rxBytes: Long,
     val txBytes: Long,
-    val detail: String
+    val detail: String,
+    val expectedIp: String
 )
 
 interface VpnStateObserver {

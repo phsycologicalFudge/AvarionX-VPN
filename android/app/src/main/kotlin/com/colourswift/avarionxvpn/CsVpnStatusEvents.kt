@@ -54,7 +54,8 @@ object CsVpnStatusEvents : VpnStateObserver {
             "detail" to snapshot.detail,
             "downloadBps" to VpnConnectionController.downloadBytesPerSecond(),
             "uploadBps" to VpnConnectionController.uploadBytesPerSecond(),
-            "latencyMs" to VpnConnectionController.latencyMillis()
+            "latencyMs" to VpnConnectionController.latencyMillis(),
+            "expectedIp" to snapshot.expectedIp
         )
     }
 

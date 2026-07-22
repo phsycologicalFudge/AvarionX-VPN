@@ -1,5 +1,9 @@
 part of '../full_vpn_backend.dart';
 
+const _csSecureStorage = FlutterSecureStorage(
+  aOptions: AndroidOptions(encryptedSharedPreferences: true),
+);
+
 extension _FullVpnControllerStorage on FullVpnController {
   Future<void> _loadLastLocation() async {
     final prefs = await SharedPreferences.getInstance();
@@ -11,7 +15,17 @@ extension _FullVpnControllerStorage on FullVpnController {
 
   Future<void> _loadToken() async {
     final prefs = await SharedPreferences.getInstance();
-    final t = prefs.getString(FullVpnController.kAuthToken) ?? "";
+    var t = prefs.getString(FullVpnController.kAuthToken) ?? "";
+
+    if (t.isEmpty) {
+      final stray = await _csSecureStorage.read(key: FullVpnController.kAuthToken) ?? "";
+      if (stray.isNotEmpty) {
+        await prefs.setString(FullVpnController.kAuthToken, stray);
+        await _csSecureStorage.delete(key: FullVpnController.kAuthToken);
+        t = stray;
+      }
+    }
+
     if (t != _token) {
       _token = t;
       notifyListeners();
@@ -26,6 +40,8 @@ extension _FullVpnControllerStorage on FullVpnController {
   }
 
   Future<void> _clearSession() async {
+    await _csSecureStorage.delete(key: FullVpnController.kPkceVerifier);
+
     final prefs = await SharedPreferences.getInstance();
     await prefs.remove(FullVpnController.kAuthToken);
     await prefs.remove(FullVpnController.kDnsBlocklistsJson);
@@ -73,8 +89,6 @@ extension _FullVpnControllerStorage on FullVpnController {
     final prefs = await SharedPreferences.getInstance();
     final saved = prefs.getString(FullVpnController.kSelectedServerId) ?? "";
     if (saved.isEmpty) return;
-    final ok = servers.any((s) => s.id == saved);
-    if (!ok) return;
     _selectedServerId = saved;
     notifyListeners();
   }
@@ -159,6 +173,23 @@ extension _FullVpnControllerStorage on FullVpnController {
     final created = _randomOpaqueId();
     await prefs.setString(FullVpnController.kAnonymousDeviceKeyFallback, created);
     return created;
+  }
+
+  Future<String> _generateAndStorePkceChallenge() async {
+    final r = Random.secure();
+    final bytes = List<int>.generate(64, (_) => r.nextInt(256));
+    final verifier = base64Url.encode(bytes).replaceAll("=", "");
+
+    await _csSecureStorage.write(key: FullVpnController.kPkceVerifier, value: verifier);
+
+    final digest = sha256.convert(utf8.encode(verifier));
+    return base64Url.encode(digest.bytes).replaceAll("=", "");
+  }
+
+  Future<String> _takeStoredPkceVerifier() async {
+    final v = await _csSecureStorage.read(key: FullVpnController.kPkceVerifier) ?? "";
+    await _csSecureStorage.delete(key: FullVpnController.kPkceVerifier);
+    return v;
   }
 
   Future<void> _syncAccountEntitlementToLocalPro() async {

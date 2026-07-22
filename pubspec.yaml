@@ -1,7 +1,7 @@
 name: colourswift_av
 description: AvarionX Security - antivirus suite
 publish_to: "none"
-version: 3.1.9+11558
+version: 3.2.0+11559
 environment:
   sdk: ">=3.0.0 <4.0.0"
 

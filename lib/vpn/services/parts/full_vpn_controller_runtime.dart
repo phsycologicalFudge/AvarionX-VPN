@@ -14,6 +14,7 @@ class VpnRuntimeSnapshot {
   final double downloadBps;
   final double uploadBps;
   final int latencyMs;
+  final String expectedIp;
 
   const VpnRuntimeSnapshot({
     required this.state,
@@ -29,6 +30,7 @@ class VpnRuntimeSnapshot {
     required this.downloadBps,
     required this.uploadBps,
     required this.latencyMs,
+    required this.expectedIp,
   });
 
   factory VpnRuntimeSnapshot.fromMap(Map<dynamic, dynamic> m) {
@@ -62,6 +64,7 @@ class VpnRuntimeSnapshot {
       downloadBps: asDouble(m["downloadBps"]),
       uploadBps: asDouble(m["uploadBps"]),
       latencyMs: asInt(m["latencyMs"]),
+      expectedIp: "${m["expectedIp"] ?? ""}",
     );
   }
 
@@ -83,7 +86,7 @@ extension _FullVpnControllerRuntime on FullVpnController {
 
     try {
       _runtimeSub = _statusChannel.receiveBroadcastStream().listen(
-        (event) {
+            (event) {
           if (event is! Map) return;
           _applyRuntimeSnapshot(VpnRuntimeSnapshot.fromMap(event));
         },
@@ -102,13 +105,22 @@ extension _FullVpnControllerRuntime on FullVpnController {
     _runtimeSub = null;
   }
 
+  static const Duration _fastLocationTimeout = Duration(milliseconds: 900);
+
+  static const List<Duration> _backgroundLocationTimeouts = [
+    Duration(milliseconds: 1200),
+    Duration(milliseconds: 1200),
+    Duration(milliseconds: 1500),
+    Duration(milliseconds: 1500),
+    Duration(milliseconds: 2000),
+  ];
+
   void _applyRuntimeSnapshot(VpnRuntimeSnapshot s) {
     if (_disposed) return;
 
     final wasConnected = _connected;
+    final justConnected = !wasConnected && s.isConnected;
 
-    _connected = s.isConnected;
-    _connectingUi = s.isConnecting;
     _reconnecting = s.isReconnecting;
     _wantsConnected = s.wantsConnected;
     _reconnectAttempt = s.reconnectAttempt;
@@ -120,27 +132,74 @@ extension _FullVpnControllerRuntime on FullVpnController {
     _latencyMs = s.latencyMs;
     _vpnTransport = s.transport;
     _status = s.detail;
+    _expectedExitIp = s.expectedIp;
 
-    notifyListeners();
-
-    if (!wasConnected && _connected) {
-      _onRuntimeConnected();
+    if (justConnected) {
+      unawaited(_settleNewConnection());
       return;
     }
+
+    _connected = s.isConnected;
+    _connectingUi = s.isConnecting;
+    notifyListeners();
 
     if (wasConnected && !_connected) {
       _onRuntimeDisconnected();
     }
   }
 
-  void _onRuntimeConnected() {
+  Future<void> _settleNewConnection() async {
+    if (_disposed) return;
+
     _connectedAt = DateTime.now();
+    _locationFetching = true;
+
+    final expectedIp = _expectedExitIp;
+    final gotFast = await _fetchLocationOnce(
+      timeout: _fastLocationTimeout,
+      expectedIp: expectedIp,
+    );
+
+    if (_disposed) return;
+
+    _connected = true;
+    _connectingUi = false;
+    _locationFetching = !gotFast;
+    notifyListeners();
+
     unawaited(soundController.playConnect());
     unawaited(_postConnectRefresh());
+
+    if (!gotFast) {
+      unawaited(_backgroundLocationRetry(expectedIp));
+    }
+  }
+
+  Future<void> _backgroundLocationRetry(String expectedIp) async {
+    for (final timeout in _backgroundLocationTimeouts) {
+      if (_disposed || !_connected) return;
+
+      await Future.delayed(const Duration(milliseconds: 500));
+      if (_disposed || !_connected) return;
+
+      final ok = await _fetchLocationOnce(timeout: timeout, expectedIp: expectedIp);
+      if (ok) {
+        if (_disposed || !_connected) return;
+        _locationFetching = false;
+        notifyListeners();
+        return;
+      }
+    }
+
+    if (_disposed || !_connected) return;
+    _locationFetching = false;
+    notifyListeners();
   }
 
   void _onRuntimeDisconnected() {
     _connectedAt = null;
+    _locationFetching = false;
+    _expectedExitIp = "";
     unawaited(soundController.playDisconnect());
 
     _rxBytes = 0;
@@ -223,6 +282,8 @@ extension _FullVpnControllerRuntime on FullVpnController {
   }
 
   Future<void> _persistConnectSelection() async {
+    _vpnTransport = _correctedTransportForServerId(_selectedServerId, _vpnTransport);
+
     final prefs = await SharedPreferences.getInstance();
     await prefs.setString(
       FullVpnController.kSelectedServerId,

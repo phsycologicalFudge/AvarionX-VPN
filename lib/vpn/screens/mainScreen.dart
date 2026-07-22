@@ -56,7 +56,6 @@ class _FullVpnModeScreenState extends State<FullVpnModeScreen>
     c = FullVpnController(
       apiBase: "https://api.colourswift.com",
       loginUrl: "https://api.colourswift.com/login",
-      deepLinkPrefix: "colourswift://auth?token=",
     );
 
     _freePoolService = const FullVpnFreePoolService(
@@ -293,9 +292,9 @@ class _FullVpnModeScreenState extends State<FullVpnModeScreen>
 
   String _currentModeLabel() {
     final mode = _currentModeValue();
-    if (mode == "stealth_plus") return "Stealth+";
-    if (mode == "obfuscation") return "Obfuscation";
-    return "Privacy";
+    if (mode == "stealth_plus") return "Hysteria";
+    if (mode == "obfuscation") return "Amnezia";
+    return "WireGuard";
   }
 
   String _countryName(String code) {
@@ -377,10 +376,10 @@ class _FullVpnModeScreenState extends State<FullVpnModeScreen>
       final u = uri.toString();
       if (!u.startsWith("colourswift://auth")) return;
 
-      final token = uri.queryParameters["token"] ?? "";
-      if (token.isEmpty) return;
+      final code = uri.queryParameters["code"] ?? "";
+      if (code.isEmpty) return;
 
-      await c.setTokenFromLogin(token);
+      await c.completePkceLogin(code);
 
       if (_closing || !mounted) return;
 
@@ -415,8 +414,7 @@ class _FullVpnModeScreenState extends State<FullVpnModeScreen>
           onSelect: (server, transport) async {
             if (!_isServerUnlocked(server)) return;
             Navigator.pop(ctx);
-            await c.setVpnTransport(transport);
-            await c.switchServer(server);
+            await c.switchServer(server, transport: transport);
           },
         );
       },
@@ -592,20 +590,12 @@ class _FullVpnModeScreenState extends State<FullVpnModeScreen>
   }
 
   Widget _serverSelector(BuildContext context) {
-    final enabled = _hasAnyProEntitlement();
-
-    return Opacity(
-      opacity: enabled ? 1 : 0.55,
-      child: IgnorePointer(
-        ignoring: !enabled,
-        child: FullVpnServerSelectorChip(
-          servers: c.servers,
-          selectedServerId: _effectiveServerId,
-          regionLoad: _regionLoadService.loadForRegion(c.selectedRegionKey),
-          connected: c.connected,
-          onTap: c.busy || !enabled ? null : () => _showServerSheet(context),
-        ),
-      ),
+    return FullVpnServerSelectorChip(
+      servers: c.servers,
+      selectedServerId: _effectiveServerId,
+      regionLoad: _regionLoadService.loadForRegion(c.selectedRegionKey),
+      connected: c.connected,
+      onTap: c.busy ? null : () => _showServerSheet(context),
     );
   }
 
@@ -1311,6 +1301,10 @@ class _FullVpnModeScreenState extends State<FullVpnModeScreen>
                                     : l10n.vpnTitleSecure);
 
                                 final showIp = c.connected && !c.connectingUi && ip.isNotEmpty;
+                                final showFetchingIp = c.connected &&
+                                    !c.connectingUi &&
+                                    ip.isEmpty &&
+                                    c.vpnLocationFetching;
 
                                 return Column(
                                   mainAxisAlignment: MainAxisAlignment.center,
@@ -1332,6 +1326,17 @@ class _FullVpnModeScreenState extends State<FullVpnModeScreen>
                                         maxLines: 1,
                                         overflow: TextOverflow.ellipsis,
                                         style: const TextStyle(
+                                          fontSize: 11,
+                                          color: Colors.white70,
+                                          fontWeight: FontWeight.w500,
+                                        ),
+                                      ),
+                                    if (showFetchingIp)
+                                      const Text(
+                                        "Fetching IP...",
+                                        maxLines: 1,
+                                        overflow: TextOverflow.ellipsis,
+                                        style: TextStyle(
                                           fontSize: 11,
                                           color: Colors.white70,
                                           fontWeight: FontWeight.w500,

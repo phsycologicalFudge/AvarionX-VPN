@@ -5,8 +5,10 @@ import 'dart:convert';
 import 'dart:io';
 import 'dart:math';
 import 'package:colourswift_av/vpn/services/sound_controller/vpn_sound_controller.dart';
+import 'package:crypto/crypto.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
+import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:http/http.dart' as http;
 import 'package:latlong2/latlong.dart';
 import 'package:permission_handler/permission_handler.dart';
@@ -25,6 +27,7 @@ class FullVpnController extends ChangeNotifier {
   static const vpnChannel = MethodChannel("cs_vpn_control");
 
   static const kAuthToken = "cs_auth_token";
+  static const kPkceVerifier = "cs_pkce_verifier";
   static const kWgPriv = "cs_wg_private_key_b64";
   static const kWgPub = "cs_wg_public_key_b64";
   static const kDeviceId = "cs_device_id";
@@ -44,12 +47,10 @@ class FullVpnController extends ChangeNotifier {
 
   final String apiBase;
   final String loginUrl;
-  final String deepLinkPrefix;
 
   FullVpnController({
     required this.apiBase,
     required this.loginUrl,
-    required this.deepLinkPrefix,
   });
 
   Timer? _usageTimer;
@@ -91,6 +92,8 @@ class FullVpnController extends ChangeNotifier {
   dynamic _loc;
   DateTime? _locFetchedAt;
   DateTime? _connectedAt;
+  bool _locationFetching = false;
+  String _expectedExitIp = "";
 
   final List<String> _netLog = [];
 
@@ -112,7 +115,7 @@ class FullVpnController extends ChangeNotifier {
   double _uploadSpeedBps = 0;
 
 
-  String _selectedServerId = "de-nuremberg";
+  String _selectedServerId = "de";
   String _vpnTransport = "wireguard";
 
   final Map<String, bool> blocklists = {
@@ -241,8 +244,10 @@ class FullVpnController extends ChangeNotifier {
   bool get vpnLocationFresh {
     if (!_connected) return false;
     if (_connectedAt == null || _locFetchedAt == null) return false;
-    return _locFetchedAt!.isAfter(_connectedAt!.add(const Duration(milliseconds: 900)));
+    return _locFetchedAt!.isAfter(_connectedAt!);
   }
+
+  bool get vpnLocationFetching => _connected && _locationFetching;
 
   String get uiCountry {
     if (!_connected) return "";
@@ -327,10 +332,52 @@ class FullVpnController extends ChangeNotifier {
   }
 
   Future<void> startLoginInBrowser() async {
-    final u = Uri.parse(loginUrl);
+    final challenge = await _generateAndStorePkceChallenge();
+
+    final u = Uri.parse(loginUrl).replace(queryParameters: {
+      ...Uri.parse(loginUrl).queryParameters,
+      "flow": "v2",
+      "code_challenge": challenge,
+      "code_challenge_method": "S256",
+    });
+
     final ok = await launchUrl(u, mode: LaunchMode.externalApplication);
     if (!ok) {
       _status = "Failed to open browser.";
+      notifyListeners();
+    }
+  }
+
+  Future<void> completePkceLogin(String code) async {
+    final verifier = await _takeStoredPkceVerifier();
+    if (verifier.isEmpty || code.isEmpty) {
+      _status = "Sign in failed. Please try again.";
+      notifyListeners();
+      return;
+    }
+
+    try {
+      final res = await http.post(
+        Uri.parse("$apiBase/auth/exchange"),
+        headers: {"content-type": "application/json"},
+        body: jsonEncode({"code": code, "codeVerifier": verifier}),
+      );
+
+      if (res.statusCode == 200) {
+        final j = jsonDecode(res.body) as Map<String, dynamic>;
+        final token = (j["token"] ?? "").toString();
+        if (token.isNotEmpty) {
+          await setTokenFromLogin(token);
+          return;
+        }
+      }
+
+      _net("POST $apiBase/auth/exchange status=${res.statusCode} bodyLen=${res.body.length}");
+      _status = "Sign in failed. Please try again.";
+      notifyListeners();
+    } catch (e) {
+      _net("POST $apiBase/auth/exchange exception=$e");
+      _status = "Sign in failed ($e).";
       notifyListeners();
     }
   }
@@ -465,8 +512,12 @@ class FullVpnController extends ChangeNotifier {
     notifyListeners();
   }
 
-  Future<void> switchServer(FullVpnServerLocation s) async {
+  Future<void> switchServer(FullVpnServerLocation s, {String? transport}) async {
     if (_busy) return;
+
+    if (transport != null) {
+      _vpnTransport = transport.trim().toLowerCase();
+    }
 
     _status = "Selected ${s.label}";
     notifyListeners();
@@ -485,11 +536,20 @@ class FullVpnController extends ChangeNotifier {
     }
   }
 
+  String _correctedTransportForServerId(String id, String currentTransport) {
+    final normalized = id.trim().toLowerCase();
+    if (normalized.startsWith("hy-")) return "hysteria";
+    if (normalized.startsWith("awg-")) return "amnezia";
+    if (currentTransport == "hysteria") return "wireguard";
+    return currentTransport;
+  }
+
   void selectServerPreview(FullVpnServerLocation s) {
     if (_connected || _connectingUi) return;
     if (s.id == _selectedServerId) return;
 
     _selectedServerId = s.id;
+    _vpnTransport = _correctedTransportForServerId(s.id, _vpnTransport);
     _status = "Selected ${s.label}";
     notifyListeners();
   }
@@ -784,8 +844,6 @@ class FullVpnController extends ChangeNotifier {
   Future<void> _refreshConnectedMetadata() async {
     if (_disposed || !_connected) return;
 
-    unawaited(_safeRefreshLocation());
-
     if (_token.isNotEmpty) {
       try {
         await refreshMe();
@@ -795,13 +853,6 @@ class FullVpnController extends ChangeNotifier {
     if (_disposed || !_connected) return;
     try {
       await fetchUsage(showSync: !_usageEverLoaded);
-    } catch (_) {}
-  }
-
-  Future<void> _safeRefreshLocation() async {
-    if (_disposed || !_connected) return;
-    try {
-      await refreshLocation(force: true);
     } catch (_) {}
   }
 

@@ -31,7 +31,11 @@ object VpnConnectionController {
     private const val PROBE_FAILURES_BEFORE_RECONNECT = 3
     private const val STALE_HANDSHAKE_MS = 210_000L
     private const val INTERFACE_NEVER_UP_MS = 9_000L
+    private const val PEER_CACHE_TTL_MS_PREMIUM = 60L * 60L * 1000L
     private const val PROBE_INTERVAL_MS = 30_000L
+    private const val CONNECT_PROBE_DNS_TIMEOUT_MS = 700
+    private const val CONNECT_PROBE_CONNECT_TIMEOUT_MS = 900
+    private const val CONNECT_PROBE_READ_TIMEOUT_MS = 900
     private const val PROVISION_ATTEMPTS = 3
     private const val PROVISION_RETRY_DELAY_MS = 2000L
 
@@ -60,6 +64,7 @@ object VpnConnectionController {
 
     @Volatile
     private var activeRegion: String = ""
+    private var activeExitIp: String = ""
 
     @Volatile
     private var wantsConnected: Boolean = false
@@ -75,6 +80,7 @@ object VpnConnectionController {
 
     @Volatile
     private var connectStartedAtMs: Long = 0L
+    private var usedCachedPeer: Boolean = false
 
     @Volatile
     private var lastHandshakeMs: Long = 0L
@@ -169,7 +175,8 @@ object VpnConnectionController {
             lastHandshakeMs = lastHandshakeMs,
             rxBytes = prevRxBytes,
             txBytes = prevTxBytes,
-            detail = detail
+            detail = detail,
+            expectedIp = activeExitIp
         )
     }
 
@@ -286,6 +293,30 @@ object VpnConnectionController {
         VpnPrefsStore.setVpnModeOff(ctx)
     }
 
+    private fun hostOnly(endpoint: String): String {
+        val trimmed = endpoint.trim()
+        if (trimmed.isEmpty()) return ""
+        if (trimmed.startsWith("[")) {
+            val closeIdx = trimmed.indexOf(']')
+            if (closeIdx > 0) return trimmed.substring(1, closeIdx)
+        }
+        val idx = trimmed.lastIndexOf(":")
+        if (idx <= 0) return trimmed
+        return trimmed.substring(0, idx)
+    }
+
+    private fun isIpv4Literal(value: String): Boolean {
+        val parts = value.trim().split(".")
+        if (parts.size != 4) return false
+        for (part in parts) {
+            if (part.isEmpty() || !part.all { it.isDigit() }) return false
+            val n = part.toIntOrNull() ?: return false
+            if (n < 0 || n > 255) return false
+            if (part.length > 1 && part.startsWith("0")) return false
+        }
+        return true
+    }
+
     private fun runConnect(plan: ConnectPlan, gen: Int, stopFirst: Boolean) {
         val ctx = appContext ?: return
 
@@ -331,7 +362,18 @@ object VpnConnectionController {
             val keypair = VpnIdentityStore.getOrCreateKeypair(ctx)
 
             var peer: JSONObject? = null
+            var fromCache = false
+
+            val cached = readCachedPeer(ctx, plan.region, plan.premium)
+            if (cached != null) {
+                peer = cached
+                fromCache = true
+                log("peer_cache_hit region=${plan.region}")
+            }
+
             for (attempt in 0 until PROVISION_ATTEMPTS) {
+                if (peer != null) break
+
                 if (isStale(gen)) return
 
                 when (val res = VpnApiClient.provision(
@@ -373,6 +415,8 @@ object VpnConnectionController {
                 return
             }
 
+            usedCachedPeer = fromCache
+
             if (isStale(gen)) return
 
             if (stopFirst && TunnelWatchdog.runningTransport() != null) {
@@ -384,8 +428,16 @@ object VpnConnectionController {
 
             when (plan.transport) {
                 VpnTransport.HYSTERIA -> {
-                    val args = VpnConfigBuilder.buildHysteriaArgs(resolvedPeer)
+                    val args = try {
+                        VpnConfigBuilder.buildHysteriaArgs(resolvedPeer)
+                    } catch (t: Throwable) {
+                        if (fromCache) invalidatePeerCache("incomplete_hysteria_settings")
+                        failConnect(t.message ?: "Provision returned incomplete Hysteria settings.")
+                        return
+                    }
                     if (isStale(gen)) return
+                    val hyHost = hostOnly(args.server)
+                    activeExitIp = if (isIpv4Literal(hyHost)) hyHost else ""
                     log("hy_start region=${plan.region} server=${args.server}")
                     VpnModeSwitcher.switchToHysteria(
                         ctx,
@@ -408,6 +460,7 @@ object VpnConnectionController {
                     if (assignedIp.isEmpty() || endpoint.isEmpty() ||
                         serverPublicKey.isEmpty() || allowed.isEmpty()
                     ) {
+                        if (fromCache) invalidatePeerCache("incomplete_wg_settings")
                         failConnect("Provision returned incomplete settings")
                         return
                     }
@@ -423,6 +476,8 @@ object VpnConnectionController {
                     )
 
                     VpnPrefsStore.setLastWgConfig(ctx, cfg)
+                    val exitHost = hostOnly(endpoint)
+                    activeExitIp = if (isIpv4Literal(exitHost)) exitHost else ""
 
                     if (isStale(gen)) return
 
@@ -436,11 +491,16 @@ object VpnConnectionController {
                 }
             }
 
+            if (!fromCache && plan.premium) {
+                VpnPrefsStore.setCachedPeer(ctx, resolvedPeer.toString(), plan.region)
+            }
+
             VpnPrefsStore.setVpnModeFull(ctx)
             connectStartedAtMs = System.currentTimeMillis()
             detail = "Starting ${plan.transport.label}"
             publish()
         } catch (t: Throwable) {
+            if (usedCachedPeer) invalidatePeerCache("connect_exception_${t.message ?: "unknown"}")
             failConnect(t.message ?: "connect error")
         } finally {
             busy.set(false)
@@ -553,21 +613,63 @@ object VpnConnectionController {
         val ageMs = System.currentTimeMillis() - connectStartedAtMs
         if (ageMs > INTERFACE_NEVER_UP_MS) {
             connectStartedAtMs = 0L
+            invalidatePeerCache("interface_never_up")
             triggerReconnect("interface_never_up")
         }
     }
 
+    private fun readCachedPeer(ctx: android.content.Context, region: String, premium: Boolean): JSONObject? {
+        if (!premium) return null
+
+        val raw = VpnPrefsStore.cachedPeer(ctx)
+        if (raw.isEmpty()) return null
+        if (VpnPrefsStore.cachedPeerRegion(ctx) != region) return null
+
+        val ageMs = System.currentTimeMillis() - VpnPrefsStore.cachedPeerAtMs(ctx)
+        if (ageMs < 0L || ageMs > PEER_CACHE_TTL_MS_PREMIUM) return null
+
+        return try {
+            JSONObject(raw)
+        } catch (t: Throwable) {
+            null
+        }
+    }
+
+    private fun invalidatePeerCache(reason: String) {
+        if (!usedCachedPeer) return
+        val ctx = appContext ?: return
+        usedCachedPeer = false
+        VpnPrefsStore.clearCachedPeer(ctx)
+        log("peer_cache_invalidated reason=" + reason)
+    }
+
     private fun markConnected() {
+        val probeStarted = System.currentTimeMillis()
+        val probeResult = TunnelProbe.probe(
+            dnsTimeoutMs = CONNECT_PROBE_DNS_TIMEOUT_MS,
+            connectTimeoutMs = CONNECT_PROBE_CONNECT_TIMEOUT_MS,
+            readTimeoutMs = CONNECT_PROBE_READ_TIMEOUT_MS
+        )
+        log(
+            "connect_probe ok=${probeResult.ok} code=${probeResult.statusCode} " +
+                    "elapsedMs=${probeResult.elapsedMs} totalBlockedMs=${System.currentTimeMillis() - probeStarted} " +
+                    "error=${probeResult.error}"
+        )
+
         connectedAtMs = System.currentTimeMillis()
         connectStartedAtMs = 0L
         intentionalStop = false
         lastHandshakeMs = 0L
         probeFailStreak = 0
-        lastProbeSuccessAtMs = 0L
+        lastProbeSuccessAtMs = if (probeResult.ok) System.currentTimeMillis() else 0L
         prevRxBytes = 0L
         prevTxBytes = 0L
         lastStatsAtMs = 0L
         lastRecentTraffic = false
+
+        if (probeResult.ok) {
+            TunnelProbe.measureLatencyMs()?.let { latencyMs = it }
+        }
 
         runtimeState = VpnRuntimeState.CONNECTED
         detail = "Connected"
@@ -582,6 +684,7 @@ object VpnConnectionController {
 
         connectedAtMs = 0L
         connectStartedAtMs = 0L
+        activeExitIp = ""
         resetHealthCounters()
         stopProbePolling()
 
@@ -714,6 +817,7 @@ object VpnConnectionController {
         detail = message
         log("connect_failed msg=$message")
         connectStartedAtMs = 0L
+        activeExitIp = ""
 
         if (wantsConnected && !pausedByUser) {
             runtimeState = VpnRuntimeState.RECONNECTING

@@ -54,9 +54,9 @@ class _FullVpnServerPickerSheetState extends State<FullVpnServerPickerSheet> {
   }
 
   String _titleForTab(String tab) {
-    if (tab == "obfuscation") return "Obfuscation";
-    if (tab == "stealth_plus") return "Stealth+";
-    return "Privacy";
+    if (tab == "obfuscation") return "Amnezia";
+    if (tab == "stealth_plus") return "Hysteria";
+    return "WireGuard";
   }
 
   String _bodyForTab(String tab) {
@@ -161,17 +161,14 @@ class _FullVpnServerPickerSheetState extends State<FullVpnServerPickerSheet> {
         required bool locked,
       }) {
         final selected = _tab == value;
-        final enabled = !locked;
 
         return Expanded(
           child: GestureDetector(
             behavior: HitTestBehavior.opaque,
-            onTap: enabled
-                ? () => setState(() {
+            onTap: () => setState(() {
               _tab = value;
               _expandedCountries.clear();
-            })
-                : null,
+            }),
             child: Padding(
               padding: const EdgeInsets.symmetric(vertical: 10),
               child: Row(
@@ -184,9 +181,7 @@ class _FullVpnServerPickerSheetState extends State<FullVpnServerPickerSheet> {
                       fontWeight: selected ? FontWeight.w800 : FontWeight.w600,
                       color: selected
                           ? Colors.white
-                          : Colors.white.withValues(
-                        alpha: enabled ? 0.45 : 0.25,
-                      ),
+                          : Colors.white.withValues(alpha: 0.45),
                     ),
                   ),
                   if (locked) ...[
@@ -215,9 +210,9 @@ class _FullVpnServerPickerSheetState extends State<FullVpnServerPickerSheet> {
         children: [
           Row(
             children: [
-              tab(value: "privacy", label: "Privacy", locked: false),
-              tab(value: "obfuscation", label: "Obfuscation", locked: false),
-              tab(value: "stealth_plus", label: "Stealth+", locked: !widget.hasPro),
+              tab(value: "privacy", label: "WireGuard", locked: !widget.hasPro),
+              tab(value: "obfuscation", label: "Amnezia", locked: !widget.hasPro),
+              tab(value: "stealth_plus", label: "Hysteria", locked: !widget.hasPro),
             ],
           ),
           LayoutBuilder(
@@ -256,7 +251,7 @@ class _FullVpnServerPickerSheetState extends State<FullVpnServerPickerSheet> {
       final isMulti = group.length > 1;
       final expanded = _expandedCountries.contains(code);
       final anySelected = group.any((s) => s.id == widget.selectedServerId);
-      final unlocked = _tab == "privacy" ? true : widget.isServerUnlocked(group.first);
+      final unlocked = widget.isServerUnlocked(group.first);
 
       return AnimatedOpacity(
         duration: const Duration(milliseconds: 160),
@@ -325,24 +320,15 @@ class _FullVpnServerPickerSheetState extends State<FullVpnServerPickerSheet> {
                     ),
                   ),
                 )
-              else if (!unlocked)
+              else if (anySelected)
                 Padding(
                   padding: const EdgeInsets.only(right: 10),
                   child: Icon(
-                    Icons.lock_rounded,
-                    size: 15,
-                    color: Colors.white.withValues(alpha: 0.30),
+                    Icons.check_rounded,
+                    size: 18,
+                    color: Colors.white.withValues(alpha: 0.85),
                   ),
-                )
-              else if (anySelected)
-                  Padding(
-                    padding: const EdgeInsets.only(right: 10),
-                    child: Icon(
-                      Icons.check_rounded,
-                      size: 18,
-                      color: Colors.white.withValues(alpha: 0.85),
-                    ),
-                  ),
+                ),
             ],
           ),
         ),
@@ -351,7 +337,7 @@ class _FullVpnServerPickerSheetState extends State<FullVpnServerPickerSheet> {
 
     Widget citySubRow(FullVpnServerLocation s) {
       final selected = s.id == widget.selectedServerId;
-      final unlocked = _tab == "privacy" ? true : widget.isServerUnlocked(s);
+      final unlocked = widget.isServerUnlocked(s);
       final city = (s.city?.trim().isNotEmpty == true) ? s.city! : _countryName(s.countryCode);
 
       return InkWell(

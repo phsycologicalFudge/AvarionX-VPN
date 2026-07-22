@@ -20,6 +20,9 @@ object VpnPrefsStore {
     private const val K_PLAN_PREMIUM = "cs_port_last_premium"
     private const val K_WANTS_CONNECTED = "cs_port_wants_connected"
     private const val K_PAUSED_BY_USER = "cs_port_paused_by_user"
+    private const val K_PEER_CACHE = "cs_port_peer_cache"
+    private const val K_PEER_CACHE_REGION = "cs_port_peer_cache_region"
+    private const val K_PEER_CACHE_AT = "cs_port_peer_cache_at"
 
     fun authToken(ctx: Context): String = FlutterPrefsBridge.getString(ctx, K_AUTH_TOKEN)
 
@@ -44,7 +47,7 @@ object VpnPrefsStore {
     }
 
     fun selectedServerId(ctx: Context): String =
-        FlutterPrefsBridge.getString(ctx, K_SELECTED_SERVER_ID, "de-nuremberg")
+        FlutterPrefsBridge.getString(ctx, K_SELECTED_SERVER_ID, "de")
 
     fun storedTransport(ctx: Context): String =
         FlutterPrefsBridge.getString(ctx, K_VPN_TRANSPORT, "wireguard").lowercase()
@@ -92,4 +95,24 @@ object VpnPrefsStore {
 
     fun setPausedByUser(ctx: Context, value: Boolean) =
         FlutterPrefsBridge.putBool(ctx, K_PAUSED_BY_USER, value)
+
+    fun cachedPeer(ctx: Context): String = FlutterPrefsBridge.getString(ctx, K_PEER_CACHE)
+
+    fun cachedPeerRegion(ctx: Context): String =
+        FlutterPrefsBridge.getString(ctx, K_PEER_CACHE_REGION)
+
+    fun cachedPeerAtMs(ctx: Context): Long =
+        FlutterPrefsBridge.getString(ctx, K_PEER_CACHE_AT).toLongOrNull() ?: 0L
+
+    fun setCachedPeer(ctx: Context, json: String, region: String) {
+        FlutterPrefsBridge.putString(ctx, K_PEER_CACHE, json)
+        FlutterPrefsBridge.putString(ctx, K_PEER_CACHE_REGION, region)
+        FlutterPrefsBridge.putString(ctx, K_PEER_CACHE_AT, System.currentTimeMillis().toString())
+    }
+
+    fun clearCachedPeer(ctx: Context) {
+        FlutterPrefsBridge.remove(ctx, K_PEER_CACHE)
+        FlutterPrefsBridge.remove(ctx, K_PEER_CACHE_REGION)
+        FlutterPrefsBridge.remove(ctx, K_PEER_CACHE_AT)
+    }
 }

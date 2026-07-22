@@ -24,7 +24,12 @@ object TunnelProbe {
         val error: String?
     )
 
-    fun probe(url: String = PROBE_URL): ProbeResult {
+    fun probe(
+        url: String = PROBE_URL,
+        dnsTimeoutMs: Int = DNS_TIMEOUT_MS,
+        connectTimeoutMs: Int = CONNECT_TIMEOUT_MS,
+        readTimeoutMs: Int = READ_TIMEOUT_MS
+    ): ProbeResult {
         val started = System.currentTimeMillis()
         var conn: HttpURLConnection? = null
 
@@ -35,7 +40,7 @@ object TunnelProbe {
                 return ProbeResult(false, 0, 0, "empty host")
             }
 
-            if (!resolves(host)) {
+            if (!resolves(host, dnsTimeoutMs)) {
                 return ProbeResult(
                     false,
                     0,
@@ -46,8 +51,8 @@ object TunnelProbe {
 
             conn = (uri.openConnection() as HttpURLConnection).apply {
                 requestMethod = "GET"
-                connectTimeout = CONNECT_TIMEOUT_MS
-                readTimeout = READ_TIMEOUT_MS
+                connectTimeout = connectTimeoutMs
+                readTimeout = readTimeoutMs
                 instanceFollowRedirects = false
             }
 
@@ -77,7 +82,7 @@ object TunnelProbe {
         }
     }
 
-    private fun resolves(host: String): Boolean {
+    private fun resolves(host: String, dnsTimeoutMs: Int): Boolean {
         val resolved = java.util.concurrent.atomic.AtomicBoolean(false)
 
         val t = Thread {
@@ -91,7 +96,7 @@ object TunnelProbe {
         return try {
             t.isDaemon = true
             t.start()
-            t.join(DNS_TIMEOUT_MS.toLong())
+            t.join(dnsTimeoutMs.toLong())
             if (t.isAlive) {
                 t.interrupt()
                 false
